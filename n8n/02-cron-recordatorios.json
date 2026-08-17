@@ -1,0 +1,149 @@
+{
+  "name": "Seguimientos: cron avisos Telegram",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Cron de avisos (sin LLM)\nDispara cada 15 min. Solo envía filas `pending` con `fire_at <= now()`.\nLos eventos se crean a las 10:00 America/Caracas, así que antes de las 10 no sale nada.\n\n1. Corre `n8n/schema.sql`.\n2. Mapea credenciales Telegram + Postgres.\n3. Activa después de probar el chat.",
+        "height": 280,
+        "width": 420,
+        "color": 7
+      },
+      "id": "note-cron",
+      "name": "Nota cron",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "sched",
+      "name": "Cada 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, telegram_chat_id, client_name, client_phone, estimated_date::text AS estimated_date, kind, fire_at\nFROM followup_reminders\nWHERE status = 'pending'\n  AND fire_at <= now()\nORDER BY fire_at ASC, id ASC;",
+        "options": {}
+      },
+      "id": "due",
+      "name": "Avisos vencidos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        220,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "={{ [$json.kind === 't3' ? '📅 Recordatorio: seguimiento en 3 días' : '📅 Recordatorio: seguimiento HOY', '', 'Cliente: ' + $json.client_name, 'Teléfono: ' + $json.client_phone, 'Fecha estimada: ' + $json.estimated_date, '', 'Hora Venezuela: 10:00'].join('\\n') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "tg-send",
+      "name": "Enviar aviso",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE followup_reminders\nSET status = 'sent', sent_at = now()\nWHERE id = $1\n  AND status = 'pending'\nRETURNING id, status, sent_at;",
+        "options": {
+          "queryReplacement": "={{ $('Avisos vencidos').item.json.id }}"
+        }
+      },
+      "id": "mark",
+      "name": "Marcar enviado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cada 15 min": {
+      "main": [
+        [
+          {
+            "node": "Avisos vencidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisos vencidos": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso": {
+      "main": [
+        [
+          {
+            "node": "Marcar enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,781 @@
+{
+  "name": "Seguimientos: asistente Telegram",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Setup v1\n1. Corre `n8n/schema.sql` en Postgres.\n2. Mapea credenciales: Telegram, Postgres, DeepSeek.\n3. `allowedChatIds` en Config: vacío = todos; o `123,456` para allowlist.\n4. n8n debe tener HTTPS público (webhook de Telegram).\n5. Activa este workflow y prueba texto. El cron va aparte.\n\nLas tools del agente son **Postgres Tool** (`postgresTool` v2.6), no el nodo Postgres del flujo.\nModelo: `deepseek-v4-flash`.\nSi falla con `reasoning_content` al usar tools, apaga thinking o usa OpenAI Chat Model con base URL `https://api.deepseek.com` y la misma key.",
+        "height": 380,
+        "width": 460,
+        "color": 7
+      },
+      "id": "note-setup",
+      "name": "Nota setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Memoria\n- Tabla `assistant_chat_messages`: últimas **10 interacciones** (nodo Postgres Chat Memory).\n- Tabla `conversation_summaries`: compactado de lo que ya salió de la ventana.\n- Si hay más de 20 filas de mensajes, se resume con DeepSeek y se borran las viejas.\nEl resumen entra al system prompt para no perder clientes/fechas antiguas.",
+        "height": 260,
+        "width": 420,
+        "color": 5
+      },
+      "id": "note-mem",
+      "name": "Nota memoria",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "tg",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-text",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "not-bot",
+              "leftValue": "={{ Boolean($json.message.from.is_bot) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-text",
+      "name": "Hay texto?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "timezone",
+              "value": "America/Caracas",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "reminderHour",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "c3",
+              "name": "lookbackDays",
+              "value": 3,
+              "type": "number"
+            },
+            {
+              "id": "c4",
+              "name": "memoryWindow",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "c5",
+              "name": "compactKeepMessages",
+              "value": 20,
+              "type": "number"
+            },
+            {
+              "id": "c6",
+              "name": "allowedChatIds",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT summary\nFROM conversation_summaries\nWHERE telegram_chat_id = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Telegram Trigger').first().json.message.chat.id }}"
+        }
+      },
+      "id": "load-sum",
+      "name": "Cargar resumen",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst allowed = String(cfg.allowedChatIds || '').trim();\nif (allowed) {\n  const ids = allowed.split(',').map((s) => s.trim()).filter(Boolean);\n  if (!ids.includes(String(chatId))) {\n    return [];\n  }\n}\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst systemMessage = [\n  'Eres un asistente de seguimientos comerciales en Telegram. Respondes en español, breve y claro.',\n  'Zona horaria fija: America/Caracas. Los avisos se disparan SIEMPRE a las 10:00 hora Venezuela.',\n  'Un seguimiento son DOS avisos: t3 (3 días antes de la fecha estimada) y day (el mismo día).',\n  'Tú NO calculas esas horas: llama crear_seguimiento con nombre, teléfono y fecha YYYY-MM-DD.',\n  'Si falta nombre, teléfono o fecha, pregunta. Si la fecha es ambigua (el viernes, en dos semanas), confirma el YYYY-MM-DD.',\n  'Antes de crear, resume los datos y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes y cancelar_seguimiento con nombre o teléfono.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  `Fecha y hora actual en Venezuela: ${now.toFormat('yyyy-LL-dd HH:mm')}.`,\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nreturn [{\n  json: {\n    chatInput: String(msg.text || '').trim(),\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n  },\n}];"
+      },
+      "id": "prep",
+      "name": "Preparar input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "={{ $json.systemMessage }}",
+          "maxIterations": 8
+        }
+      },
+      "id": "agent",
+      "name": "Asistente seguimientos",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "deepseek-v4-flash"
+        },
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 1024
+        }
+      },
+      "id": "ds",
+      "name": "DeepSeek Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        980,
+        240
+      ],
+      "credentials": {
+        "deepSeekApi": {
+          "id": "PEGAR_CRED_DEEPSEEK",
+          "name": "DeepSeek account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ String($('Telegram Trigger').first().json.message.chat.id) }}",
+        "tableName": "assistant_chat_messages",
+        "contextWindowLength": 10
+      },
+      "id": "mem",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        1180,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Crea dos avisos de seguimiento a las 10:00 hora Venezuela: uno 3 dias antes (t3) y otro el dia de la fecha estimada (day). Pedir confirmacion antes de llamar. Parametros: client_name, client_phone, estimated_date YYYY-MM-DD.",
+        "operation": "executeQuery",
+        "query": "WITH input AS (\n  SELECT\n    $1::bigint AS telegram_chat_id,\n    btrim($2::text) AS client_name,\n    regexp_replace($3::text, '[^0-9+]', '', 'g') AS client_phone,\n    $4::date AS estimated_date\n),\nplanned AS (\n  SELECT\n    i.*,\n    k.kind,\n    (\n      (CASE WHEN k.kind = 't3' THEN i.estimated_date - 3 ELSE i.estimated_date END)\n      + TIME '10:00'\n    ) AT TIME ZONE 'America/Caracas' AS fire_at\n  FROM input i\n  CROSS JOIN (VALUES ('t3'), ('day')) AS k(kind)\n)\nINSERT INTO followup_reminders (\n  telegram_chat_id, client_name, client_phone, estimated_date, kind, fire_at, status\n)\nSELECT\n  telegram_chat_id,\n  client_name,\n  client_phone,\n  estimated_date,\n  kind,\n  fire_at,\n  CASE WHEN fire_at <= now() THEN 'skipped' ELSE 'pending' END\nFROM planned\nWHERE client_name <> '' AND client_phone <> ''\nON CONFLICT (telegram_chat_id, client_phone, estimated_date, kind)\nDO UPDATE SET\n  client_name = EXCLUDED.client_name,\n  fire_at = EXCLUDED.fire_at,\n  status = CASE\n    WHEN followup_reminders.status = 'sent' THEN followup_reminders.status\n    ELSE EXCLUDED.status\n  END\nRETURNING id, client_name, client_phone, estimated_date, kind, fire_at, status;",
+        "options": {
+          "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.chat.id, $fromAI('client_name', 'Nombre del cliente a seguir', 'string'), $fromAI('client_phone', 'Telefono del cliente', 'string'), $fromAI('estimated_date', 'Fecha estimada YYYY-MM-DD', 'string')] }}"
+        }
+      },
+      "id": "tool-crear",
+      "name": "crear_seguimiento",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1380,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lista los seguimientos pending o skipped del usuario de este chat de Telegram.",
+        "operation": "executeQuery",
+        "query": "SELECT id, client_name, client_phone, estimated_date::text AS estimated_date, kind,\n       to_char(fire_at AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD HH24:MI') AS fire_local,\n       status\nFROM followup_reminders\nWHERE telegram_chat_id = $1\n  AND status IN ('pending', 'skipped')\nORDER BY estimated_date, kind;",
+        "options": {
+          "queryReplacement": "={{ $('Telegram Trigger').first().json.message.chat.id }}"
+        }
+      },
+      "id": "tool-list",
+      "name": "listar_seguimientos",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1580,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Cancela seguimientos pending del chat actual buscando por nombre (min 3 letras) o telefono del cliente.",
+        "operation": "executeQuery",
+        "query": "UPDATE followup_reminders\nSET status = 'cancelled'\nWHERE telegram_chat_id = $1\n  AND status = 'pending'\n  AND (\n    (\n      regexp_replace($2::text, '[^0-9]', '', 'g') <> ''\n      AND regexp_replace(client_phone, '[^0-9]', '', 'g') LIKE '%' || regexp_replace($2::text, '[^0-9]', '', 'g') || '%'\n    )\n    OR (\n      char_length(btrim($2::text)) >= 3\n      AND lower(client_name) LIKE '%' || lower(btrim($2::text)) || '%'\n    )\n  )\nRETURNING id, client_name, client_phone, kind, estimated_date, status;",
+        "options": {
+          "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.chat.id, $fromAI('cliente', 'Nombre o telefono del cliente cuyo seguimiento se cancela', 'string')] }}"
+        }
+      },
+      "id": "tool-cancel",
+      "name": "cancelar_seguimiento",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1780,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send",
+      "name": "Responder Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1320,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*)::int AS n\nFROM assistant_chat_messages\nWHERE session_id = $1;",
+        "options": {
+          "queryReplacement": "={{ String($('Telegram Trigger').first().json.message.chat.id) }}"
+        }
+      },
+      "id": "cnt",
+      "name": "Contar memoria",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1540,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "need-compact",
+              "leftValue": "={{ Number($json.n) > 20 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-compact",
+      "name": "Hay que compactar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, message\nFROM assistant_chat_messages\nWHERE session_id = $1\n  AND id NOT IN (\n    SELECT id FROM assistant_chat_messages\n    WHERE session_id = $1\n    ORDER BY id DESC\n    LIMIT 20\n  )\nORDER BY id ASC;",
+        "options": {
+          "queryReplacement": "={{ String($('Telegram Trigger').first().json.message.chat.id) }}"
+        }
+      },
+      "id": "old-msgs",
+      "name": "Extraer viejos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1980,
+        120
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst prev = String(($('Cargar resumen').first().json || {}).summary || '').trim();\nfunction extract(msg) {\n  if (!msg) return '';\n  if (typeof msg === 'string') return msg;\n  const data = msg.data || msg;\n  const content = data.content || msg.content || '';\n  if (typeof content === 'string') return content;\n  if (Array.isArray(content)) {\n    return content.map((c) => (typeof c === 'string' ? c : (c && c.text) || '')).join(' ');\n  }\n  try { return JSON.stringify(content); } catch (e) { return ''; }\n}\nconst lines = items.map((item) => {\n  const raw = item.json.message || item.json;\n  if (!raw || raw.n === 0) return '';\n  const type = raw.type || (raw.data && raw.data.type) || 'msg';\n  const body = extract(raw);\n  if (!body) return '';\n  return `${type}: ${body}`;\n}).filter(Boolean);\nif (!lines.length) {\n  return [];\n}\nconst text = [\n  prev ? `Resumen previo:\\n${prev}` : '',\n  'Mensajes que salen de la ventana:',\n  lines.join('\\n'),\n].filter(Boolean).join('\\n\\n');\nreturn [{\n  json: {\n    text,\n    compactedCount: lines.length,\n    chatId: $('Telegram Trigger').first().json.message.chat.id,\n  },\n}];"
+      },
+      "id": "old-text",
+      "name": "Armar texto viejo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Resume en español, máximo 800 caracteres, solo hechos durables: clientes, teléfonos, fechas estimadas, seguimientos creados o cancelados. Descarta saludos y repeticiones.\n\n{{ $json.text }}"
+      },
+      "id": "sum",
+      "name": "Compactar historial",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2420,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "deepseek-v4-flash"
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 400
+        }
+      },
+      "id": "ds-sum",
+      "name": "DeepSeek Compactar",
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        320
+      ],
+      "credentials": {
+        "deepSeekApi": {
+          "id": "PEGAR_CRED_DEEPSEEK",
+          "name": "DeepSeek account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const compact = $input.first().json || {};\nconst summary = String(compact.text || compact.output || compact.response || compact.message || '').trim();\nif (!summary) {\n  return [];\n}\nreturn [{\n  json: {\n    summary,\n    chatId: $('Telegram Trigger').first().json.message.chat.id,\n    compactedCount: Number(($('Armar texto viejo').first().json || {}).compactedCount || 0),\n  },\n}];"
+      },
+      "id": "norm-sum",
+      "name": "Normalizar resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_summaries (telegram_chat_id, summary, last_compacted_at, messages_compacted, updated_at)\nVALUES ($1, $2, now(), $3, now())\nON CONFLICT (telegram_chat_id) DO UPDATE SET\n  summary = EXCLUDED.summary,\n  last_compacted_at = now(),\n  messages_compacted = conversation_summaries.messages_compacted + EXCLUDED.messages_compacted,\n  updated_at = now();",
+        "options": {
+          "queryReplacement": "={{ [$json.chatId, $json.summary, $json.compactedCount] }}"
+        }
+      },
+      "id": "save-sum",
+      "name": "Guardar resumen",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2860,
+        120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM assistant_chat_messages\nWHERE session_id = $1\n  AND id NOT IN (\n    SELECT id FROM assistant_chat_messages\n    WHERE session_id = $1\n    ORDER BY id DESC\n    LIMIT 20\n  );",
+        "options": {
+          "queryReplacement": "={{ String($('Telegram Trigger').first().json.message.chat.id) }}"
+        }
+      },
+      "id": "del-old",
+      "name": "Borrar viejos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3080,
+        120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Hay texto?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay texto?": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Cargar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar resumen": {
+      "main": [
+        [
+          {
+            "node": "Preparar input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar input": {
+      "main": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "crear_seguimiento": {
+      "ai_tool": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "listar_seguimientos": {
+      "ai_tool": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cancelar_seguimiento": {
+      "ai_tool": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asistente seguimientos": {
+      "main": [
+        [
+          {
+            "node": "Responder Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder Telegram": {
+      "main": [
+        [
+          {
+            "node": "Contar memoria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contar memoria": {
+      "main": [
+        [
+          {
+            "node": "Hay que compactar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay que compactar?": {
+      "main": [
+        [
+          {
+            "node": "Extraer viejos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer viejos": {
+      "main": [
+        [
+          {
+            "node": "Armar texto viejo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar texto viejo": {
+      "main": [
+        [
+          {
+            "node": "Compactar historial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Compactar": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Compactar historial",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compactar historial": {
+      "main": [
+        [
+          {
+            "node": "Normalizar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar resumen": {
+      "main": [
+        [
+          {
+            "node": "Guardar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar resumen": {
+      "main": [
+        [
+          {
+            "node": "Borrar viejos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
