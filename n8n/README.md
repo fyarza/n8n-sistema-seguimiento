@@ -2,6 +2,8 @@
 
 Bot de Telegram (solo texto) que crea seguimientos en Postgres y avisa en el mismo chat. Sin Google Calendar.
 
+Arquitectura, stack y tools: [`docs/arquitectura.md`](../docs/arquitectura.md).
+
 ## Archivos
 
 | Archivo | Qué es |
