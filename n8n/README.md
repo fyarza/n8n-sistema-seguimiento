@@ -49,6 +49,7 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `listar_leads_potenciales` | Difusión: no reservaron, con potencial |
 | `listar_preguntan_sin_reservar` | Preguntan mucho y no cierran |
 | `estadisticas_leads_mes` | Conteos y `%` del mes (`YYYY-MM`) |
+| `listar_leads_reporte` | Listado por nombre: `concretaron`, `no_concretaron` o `atendidos` (mes YYYY-MM) |
 
 ## Memoria del chat Telegram
 
