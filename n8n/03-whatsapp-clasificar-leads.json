@@ -1,0 +1,956 @@
+{
+  "name": "Seguimientos: WhatsApp clasificar leads",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (tablas leads).\n2. Mapea Postgres + DeepSeek (`deepseek-v4-flash`).\n3. En Evolution, webhook POST a este path: `seguimientos-leads`.\n4. Guarda los dos lados (`fromMe` incluido). Solo clasifica texto del cliente relevante.\n5. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.",
+        "height": 360,
+        "width": 480,
+        "color": 7
+      },
+      "id": "note-wa",
+      "name": "Nota WhatsApp",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seguimientos-leads",
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Webhook Evolution",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "7c3e9d21-4a8b-4f11-9c22-0e8b1a4d7003"
+    },
+    {
+      "parameters": {
+        "jsCode": "function unwrapMessage(msg) {\n  if (!msg || typeof msg !== 'object') return {};\n  const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage'];\n  for (const w of wrappers) {\n    if (msg[w] && msg[w].message) return unwrapMessage(msg[w].message);\n  }\n  return msg;\n}\n\nconst root = $input.first().json || {};\nconst payload = root.body && root.body.data ? root.body : root;\nconst event = String(payload.event || '');\nif (event && event !== 'messages.upsert') {\n  return [];\n}\nconst data = payload.data || {};\nconst key = data.key || {};\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid.includes('status@broadcast') || remoteJid.endsWith('@broadcast')) {\n  return [];\n}\nconst alt = String(key.remoteJidAlt || '');\nconst jidForPhone = alt.includes('@s.whatsapp.net') ? alt : remoteJid;\nconst phone = jidForPhone.replace(/[^0-9]/g, '');\nif (!phone) {\n  return [];\n}\n\nconst msg = unwrapMessage(data.message || {});\nconst declared = String(data.messageType || '');\nconst mimeOf = (obj) => String((obj && obj.mimetype) || '');\n\nlet contentType = 'unknown';\nif (msg.extendedTextMessage || msg.conversation || declared === 'conversation' || declared === 'extendedTextMessage') {\n  contentType = 'text';\n}\nif (msg.imageMessage || declared === 'imageMessage' || mimeOf(msg.documentMessage).startsWith('image/')) {\n  contentType = 'image';\n}\nif (msg.videoMessage || msg.ptvMessage || declared === 'videoMessage' || declared === 'ptvMessage') {\n  contentType = 'video';\n}\nif (msg.audioMessage || declared === 'audioMessage') {\n  contentType = 'audio';\n}\nif (msg.stickerMessage || declared === 'stickerMessage') {\n  contentType = 'sticker';\n}\nif ((msg.documentMessage || declared === 'documentMessage') && contentType === 'unknown') {\n  contentType = 'document';\n}\n\nconst caption = [\n  (msg.extendedTextMessage && msg.extendedTextMessage.text) || '',\n  msg.conversation || '',\n  (msg.imageMessage && msg.imageMessage.caption) || '',\n  (msg.videoMessage && msg.videoMessage.caption) || '',\n  (msg.documentMessage && (msg.documentMessage.caption || msg.documentMessage.fileName)) || '',\n].join('').trim();\n\nconst labels = {\n  image: '[Imagen enviada]',\n  video: '[Video enviado]',\n  audio: '[Audio enviado]',\n  sticker: '[Sticker enviado]',\n  document: '[Documento enviado]',\n};\nlet content = caption;\nif (labels[contentType]) {\n  content = caption ? `${labels[contentType]} ${caption}` : labels[contentType];\n}\n\nconst ts = data.messageTimestamp;\nlet occurredAt;\nif (typeof ts === 'number') {\n  occurredAt = DateTime.fromSeconds(ts).toISO();\n} else if (ts && typeof ts.low === 'number') {\n  occurredAt = DateTime.fromSeconds(ts.low).toISO();\n} else {\n  occurredAt = DateTime.now().setZone('America/Caracas').toISO();\n}\n\nreturn [{\n  json: {\n    whatsapp_jid: remoteJid,\n    phone,\n    display_name: String(data.pushName || ''),\n    from_me: Boolean(key.fromMe),\n    message_id: String(key.id || `${remoteJid}-${occurredAt}`),\n    content_type: contentType,\n    body: content,\n    occurred_at: occurredAt,\n  },\n}];"
+      },
+      "id": "norm",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO leads (whatsapp_jid, phone, display_name)\nVALUES ($1, $2, $3)\nON CONFLICT (whatsapp_jid) DO UPDATE SET\n  phone = EXCLUDED.phone,\n  display_name = CASE\n    WHEN EXCLUDED.display_name <> '' THEN EXCLUDED.display_name\n    ELSE leads.display_name\n  END,\n  updated_at = now()\nRETURNING id, stage, quoted_at, score_cierre, score_engagement, score_potencial, score_silencio, sentiment_last, client_msg_count, advisor_msg_count;",
+        "options": {
+          "queryReplacement": "={{ [$json.whatsapp_jid, $json.phone, $json.display_name] }}"
+        }
+      },
+      "id": "upsert-lead",
+      "name": "Upsert lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        440,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO whatsapp_messages (\n  lead_id, evolution_message_id, from_me, body, content_type, occurred_at\n)\nVALUES ($1, $2, $3, $4, $5, $6::timestamptz)\nON CONFLICT (lead_id, evolution_message_id) DO NOTHING\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$('Upsert lead').first().json.id, $('Normalizar').first().json.message_id, $('Normalizar').first().json.from_me, $('Normalizar').first().json.body, $('Normalizar').first().json.content_type, $('Normalizar').first().json.occurred_at] }}"
+        }
+      },
+      "id": "ins-msg",
+      "name": "Insertar mensaje",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Upsert lead').first().json || {};\nconst norm = $('Normalizar').first().json || {};\nconst ins = $input.first().json || {};\nif (!ins.id) {\n  return [];\n}\nconst quoteRe = /OPCIONES DISPONIBLES|FORMULARIO DE REGISTRO|DETALLES DE TU ESTANCIA|cotizaci[oó]n y (fotos|videos)/i;\nreturn [{\n  json: {\n    lead_id: lead.id,\n    message_id: ins.id,\n    from_me: Boolean(norm.from_me),\n    is_quote: Boolean(norm.from_me && quoteRe.test(String(norm.body || ''))),\n    body: String(norm.body || ''),\n    stage_prev: lead.stage,\n    quoted_at: lead.quoted_at || null,\n    score_cierre_prev: Number(lead.score_cierre || 0),\n    client_msg_count: Number(lead.client_msg_count || 0),\n  },\n}];"
+      },
+      "id": "prep-upd",
+      "name": "Preparar update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET\n  last_client_at = CASE WHEN $2::boolean THEN last_client_at ELSE now() END,\n  last_advisor_at = CASE WHEN $2::boolean THEN now() ELSE last_advisor_at END,\n  client_msg_count = client_msg_count + CASE WHEN $2::boolean THEN 0 ELSE 1 END,\n  advisor_msg_count = advisor_msg_count + CASE WHEN $2::boolean THEN 1 ELSE 0 END,\n  quoted_at = CASE WHEN $2::boolean AND $3::boolean THEN COALESCE(quoted_at, now()) ELSE quoted_at END,\n  updated_at = now()\nWHERE id = $1\nRETURNING id, stage, quoted_at, score_cierre, score_engagement, score_potencial, score_silencio, sentiment_last, client_msg_count, advisor_msg_count;",
+        "options": {
+          "queryReplacement": "={{ [$json.lead_id, $json.from_me, $json.is_quote] }}"
+        }
+      },
+      "id": "upd-counts",
+      "name": "Actualizar contadores",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1100,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-from-me",
+              "leftValue": "={{ Boolean($('Preparar update').first().json.from_me) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-me",
+      "name": "Es asesora?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-me",
+      "name": "Solo guardar asesora",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-body",
+              "leftValue": "={{ String($('Preparar update').first().json.body || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-text",
+      "name": "Hay texto cliente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        80
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-empty",
+      "name": "Sin texto",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT from_me, body,\n       to_char(occurred_at AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD HH24:MI') AS occurred_local\nFROM whatsapp_messages\nWHERE lead_id = $1\n  AND btrim(body) <> ''\nORDER BY occurred_at DESC, id DESC\nLIMIT 20;",
+        "options": {
+          "queryReplacement": "={{ $('Actualizar contadores').first().json.id }}"
+        }
+      },
+      "id": "load-ctx",
+      "name": "Cargar contexto",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1760,
+        80
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Actualizar contadores').first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst lines = $input.all()\n  .map((item) => item.json)\n  .filter((row) => row && row.body)\n  .reverse()\n  .map((row) => {\n    const who = row.from_me ? 'ASESORA' : 'CLIENTE';\n    return `[${row.occurred_local || ''}] ${who}: ${row.body}`;\n  });\nreturn [{\n  json: {\n    lead_id: lead.id,\n    message_id: prep.message_id,\n    stage_prev: lead.stage,\n    quoted_at: lead.quoted_at || null,\n    client_msg_count: Number(lead.client_msg_count || 0),\n    score_cierre_prev: Number(lead.score_cierre || 0),\n    contexto: lines.join('\\n') || 'Sin historial previo.',\n    mensaje: String(prep.body || ''),\n  },\n}];"
+      },
+      "id": "armar-ctx",
+      "name": "Armar contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres un filtro de mensajes de WhatsApp para un hotel (hospedaje/reservas). No respondas al cliente.\n\nElige UNA categoría para el último mensaje del CLIENTE, MIRANDO EL HISTORIAL:\n- relevante: fechas, precios, habitación, personas, reserva, pago, formulario, consultar con familia, o respuesta a la cotización. Un \"ok\", \"sí\", \"vale\", \"listo\" o \"gracias\" ES relevante si ya hubo cotización, formulario, precios o preguntas de habitación (no cortes el embudo).\n- irrelevante: saludo repetido o emoji solo, SIN historial de cotización/reserva.\n- spam: publicidad ajena, criptos, bots, links raros. Pedir precio del hotel NO es spam.\n- error: sin sentido o solo símbolos. Un typo (ña zona, chamos) NO es error.\n\nHistorial:\n{{ $json.contexto }}\n\nMensaje actual del CLIENTE:\n{{ $json.mensaje }}\n\nResponde SOLO una palabra: relevante, irrelevante, spam o error.",
+        "batching": {}
+      },
+      "id": "clf",
+      "name": "Filtro relevancia",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2200,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "deepseek-v4-flash"
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 1024
+        }
+      },
+      "id": "ds-clf",
+      "name": "DeepSeek Filtro",
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        340
+      ],
+      "credentials": {
+        "deepSeekApi": {
+          "id": "PEGAR_CRED_DEEPSEEK",
+          "name": "DeepSeek account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f-irr",
+              "name": "filter_label",
+              "value": "irrelevante",
+              "type": "string"
+            },
+            {
+              "id": "m-irr",
+              "name": "message_id",
+              "value": "={{ $('Armar contexto').first().json.message_id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-irr",
+      "name": "Label irrelevante",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f-spam",
+              "name": "filter_label",
+              "value": "spam",
+              "type": "string"
+            },
+            {
+              "id": "m-spam",
+              "name": "message_id",
+              "value": "={{ $('Armar contexto').first().json.message_id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-spam",
+      "name": "Label spam",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2480,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f-err",
+              "name": "filter_label",
+              "value": "error",
+              "type": "string"
+            },
+            {
+              "id": "m-err",
+              "name": "message_id",
+              "value": "={{ $('Armar contexto').first().json.message_id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-err",
+      "name": "Label error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2480,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE whatsapp_messages\nSET relevant = false, filter_label = $2\nWHERE id = $1\nRETURNING id, filter_label;",
+        "options": {
+          "queryReplacement": "={{ [$json.message_id, $json.filter_label] }}"
+        }
+      },
+      "id": "mark-skip",
+      "name": "Marcar filtro",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2720,
+        360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE whatsapp_messages\nSET relevant = true, filter_label = 'relevante'\nWHERE id = $1\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $('Armar contexto').first().json.message_id }}"
+        }
+      },
+      "id": "mark-rel",
+      "name": "Marcar relevante",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2480,
+        -40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres clasificador de embudo hotelero. NO respondas al cliente. Analiza historial + último mensaje del CLIENTE.\n\nEtapas:\n- en_proceso: conversación activa, cotizando o decidiendo.\n- concreto: pidió reservar, llenó formulario con cédula, apartar, abonar o pagar.\n- pregunto_no_concreto: varias preguntas post-cotización (habitación, zona, precio, camas) y no cerró.\n- no_respondio: preguntó, recibió cotización/formulario, casi no volvió (a lo sumo consulto con esposo).\nSi el cliente acaba de escribir, NO uses no_respondio.\n\nScores enteros 0-100:\n- score_cierre: señales de reserva/pago.\n- score_engagement: cuánto preguntó.\n- score_silencio: riesgo de ghosting.\n- score_potencial: utilidad para difusión (alto si hay interés y NO reservó).\n\nsentiment: positivo|neutro|negativo|enfadado\nreason: una frase en español.\n\nStage previo: {{ $('Armar contexto').first().json.stage_prev }}. quoted_at: {{ $('Armar contexto').first().json.quoted_at }}. msgs cliente: {{ $('Armar contexto').first().json.client_msg_count }}.\n\nHistorial:\n{{ $('Armar contexto').first().json.contexto }}\n\nÚltimo mensaje CLIENTE:\n{{ $('Armar contexto').first().json.mensaje }}\n\nResponde SOLO JSON:\n{\"stage\":\"en_proceso\",\"score_potencial\":0,\"score_engagement\":0,\"score_cierre\":0,\"score_silencio\":0,\"sentiment\":\"neutro\",\"reason\":\"...\"}",
+        "batching": {}
+      },
+      "id": "cls-etapa",
+      "name": "Clasificar etapa",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2700,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "deepseek-v4-flash"
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 1024
+        }
+      },
+      "id": "ds-cls",
+      "name": "DeepSeek Clasificar",
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        180
+      ],
+      "credentials": {
+        "deepSeekApi": {
+          "id": "PEGAR_CRED_DEEPSEEK",
+          "name": "DeepSeek account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') {\n  raw = JSON.stringify(raw);\n}\nraw = String(raw).replace(/```json/gi, '').replace(/```/g, '').trim();\nlet data = {};\ntry {\n  data = JSON.parse(raw);\n} catch (e) {\n  data = {};\n}\nconst lead = $('Actualizar contadores').first().json || {};\nconst ctx = $('Armar contexto').first().json || {};\nconst body = String(ctx.mensaje || '');\nconst allText = `${ctx.contexto || ''}\\n${body}`;\nconst closeRe = /para reservar|voy a pagar|puedo abonar|me la (puede )?apartar|pagar completo|hacer la reservaci|ya pagu[eé]|env[ií]o (el )?pago/i;\nconst stages = { en_proceso: true, concreto: true, pregunto_no_concreto: true, no_respondio: true };\nconst sentiments = { positivo: true, neutro: true, negativo: true, enfadado: true };\nconst clamp = (n, d) => {\n  const v = Number(n);\n  if (!Number.isFinite(v)) return d;\n  return Math.max(0, Math.min(100, Math.round(v)));\n};\nlet stage = stages[data.stage] ? data.stage : 'en_proceso';\nlet score_cierre = clamp(data.score_cierre, 0);\nlet score_engagement = clamp(data.score_engagement, 0);\nlet score_silencio = clamp(data.score_silencio, 0);\nlet score_potencial = clamp(data.score_potencial, 0);\nlet sentiment = sentiments[data.sentiment] ? data.sentiment : 'neutro';\nlet reason = String(data.reason || '').slice(0, 280);\nif (closeRe.test(allText)) {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, 85);\n  score_potencial = Math.min(score_potencial, 20);\n  reason = reason || 'Señales explícitas de reserva o pago';\n}\nif (lead.stage === 'concreto' || ctx.stage_prev === 'concreto') {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, Number(lead.score_cierre) || 85);\n}\nif (stage === 'no_respondio') {\n  stage = score_engagement >= 55 && (lead.quoted_at || ctx.quoted_at) ? 'pregunto_no_concreto' : 'en_proceso';\n}\nif (stage !== 'concreto') {\n  const blended = Math.round((score_engagement * 0.6) + ((100 - score_cierre) * 0.2) + ((100 - score_silencio) * 0.2));\n  score_potencial = clamp(Math.max(score_potencial, blended), score_potencial);\n}\nreturn [{\n  json: {\n    lead_id: lead.id,\n    stage,\n    score_potencial,\n    score_engagement,\n    score_cierre,\n    score_silencio,\n    sentiment,\n    reason: reason || 'Clasificación de conversación',\n  },\n}];"
+      },
+      "id": "apply",
+      "name": "Aplicar reglas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2940,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET\n  stage = $2,\n  score_potencial = $3,\n  score_engagement = $4,\n  score_cierre = $5,\n  score_silencio = $6,\n  sentiment_last = $7,\n  last_reason = $8,\n  updated_at = now()\nWHERE id = $1\nRETURNING id, display_name, phone, stage, score_potencial, score_engagement, score_cierre, score_silencio, sentiment_last, last_reason;",
+        "options": {
+          "queryReplacement": "={{ [$json.lead_id, $json.stage, $json.score_potencial, $json.score_engagement, $json.score_cierre, $json.score_silencio, $json.sentiment, $json.reason] }}"
+        }
+      },
+      "id": "save-lead",
+      "name": "Guardar lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3160,
+        -40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lead_score_events (\n  lead_id, stage, score_potencial, score_engagement, score_cierre, score_silencio,\n  sentiment, reason, source\n)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'classifier')\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$('Aplicar reglas').item.json.lead_id, $('Aplicar reglas').item.json.stage, $('Aplicar reglas').item.json.score_potencial, $('Aplicar reglas').item.json.score_engagement, $('Aplicar reglas').item.json.score_cierre, $('Aplicar reglas').item.json.score_silencio, $('Aplicar reglas').item.json.sentiment, $('Aplicar reglas').item.json.reason] }}"
+        }
+      },
+      "id": "save-evt",
+      "name": "Registrar evento",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3380,
+        -40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Armar contexto').first().json || {};\nconst parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') raw = JSON.stringify(raw);\nraw = String(raw).toLowerCase();\nconst msg = String(ctx.mensaje || '').trim();\nconst contexto = String(ctx.contexto || '');\nconst inFunnel = Boolean(ctx.quoted_at) || /(OPCIONES DISPONIBLES|FORMULARIO|cotizaci|habitaci|reserva con|€\\d)/i.test(contexto);\nconst shortAck = /^(ok+|okay|okei|vale|si|sí|bueno|listo|gracias|dale|perfecto)[\\s.!,]*$/i.test(msg);\nconst hotelAsk = /(precio|habitaci|disponib|reserv|fecha|noche|adulto|niñ|hosped|apartar|abonar|pagar|cotiz)/i.test(msg);\nlet label = 'irrelevante';\nif (/\\bspam\\b/.test(raw)) label = 'spam';\nelse if (/\\berror\\b/.test(raw) && !/\\brelevante\\b/.test(raw)) label = 'error';\nelse if (shortAck && inFunnel) label = 'relevante';\nelse if (hotelAsk) label = 'relevante';\nelse if (/\\brelevante\\b/.test(raw) && !/\\birrelevante\\b/.test(raw)) label = 'relevante';\nelse if (/\\birrelevante\\b/.test(raw)) label = 'irrelevante';\nelse if (inFunnel && msg.length > 0) label = 'relevante';\nreturn [{ json: { filter_label: label, message_id: ctx.message_id } }];\n"
+      },
+      "id": "parse-clf",
+      "name": "Parsear filtro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r-rel",
+                    "leftValue": "={{ $json.filter_label }}",
+                    "rightValue": "relevante",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "relevante"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r-irr",
+                    "leftValue": "={{ $json.filter_label }}",
+                    "rightValue": "irrelevante",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "irrelevante"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r-spam",
+                    "leftValue": "={{ $json.filter_label }}",
+                    "rightValue": "spam",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "spam"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r-err",
+                    "leftValue": "={{ $json.filter_label }}",
+                    "rightValue": "error",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "error"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "sw-clf",
+      "name": "Ruta filtro",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2620,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar": {
+      "main": [
+        [
+          {
+            "node": "Upsert lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert lead": {
+      "main": [
+        [
+          {
+            "node": "Insertar mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insertar mensaje": {
+      "main": [
+        [
+          {
+            "node": "Preparar update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar update": {
+      "main": [
+        [
+          {
+            "node": "Actualizar contadores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar contadores": {
+      "main": [
+        [
+          {
+            "node": "Es asesora?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es asesora?": {
+      "main": [
+        [
+          {
+            "node": "Solo guardar asesora",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hay texto cliente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay texto cliente?": {
+      "main": [
+        [
+          {
+            "node": "Cargar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar contexto": {
+      "main": [
+        [
+          {
+            "node": "Armar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar contexto": {
+      "main": [
+        [
+          {
+            "node": "Filtro relevancia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Filtro": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Filtro relevancia",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtro relevancia": {
+      "main": [
+        [
+          {
+            "node": "Parsear filtro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label irrelevante": {
+      "main": [
+        [
+          {
+            "node": "Marcar filtro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label spam": {
+      "main": [
+        [
+          {
+            "node": "Marcar filtro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label error": {
+      "main": [
+        [
+          {
+            "node": "Marcar filtro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar relevante": {
+      "main": [
+        [
+          {
+            "node": "Clasificar etapa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Clasificar": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Clasificar etapa",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasificar etapa": {
+      "main": [
+        [
+          {
+            "node": "Aplicar reglas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar reglas": {
+      "main": [
+        [
+          {
+            "node": "Guardar lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar lead": {
+      "main": [
+        [
+          {
+            "node": "Registrar evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear filtro": {
+      "main": [
+        [
+          {
+            "node": "Ruta filtro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ruta filtro": {
+      "main": [
+        [
+          {
+            "node": "Marcar relevante",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Label irrelevante",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Label spam",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Label error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Label irrelevante",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

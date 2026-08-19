@@ -1,0 +1,133 @@
+{
+  "name": "Seguimientos: cron silencio leads",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Cron de silencio (sin LLM)\nCada 15 min. SELECT primero (el UPDATE de n8n no trae RETURNING, solo `{success:true}`).\nSi hay cotización, el cliente lleva >24 h callado y no cerró:\n- engagement alto → `pregunto_no_concreto`\n- engagement bajo → `no_respondio`\nNo pisa `concreto`. No escribe a WhatsApp ni a Telegram.\nSi no hay filas, el flujo termina: no inserta eventos vacíos.",
+        "height": 300,
+        "width": 460,
+        "color": 7
+      },
+      "id": "note-silencio",
+      "name": "Nota silencio",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-280, -80]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "sched-silencio",
+      "name": "Cada 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  id,\n  CASE\n    WHEN score_engagement >= 55 THEN 'pregunto_no_concreto'\n    ELSE 'no_respondio'\n  END AS stage,\n  CASE\n    WHEN score_engagement >= 55 THEN GREATEST(score_potencial, 60)\n    ELSE GREATEST(LEAST(score_potencial, 55), 35)\n  END AS score_potencial,\n  score_engagement,\n  score_cierre,\n  CASE\n    WHEN score_engagement >= 55 THEN GREATEST(score_silencio, 50)\n    ELSE GREATEST(score_silencio, 75)\n  END AS score_silencio,\n  sentiment_last,\n  CASE\n    WHEN score_engagement >= 55 THEN 'Preguntó y no cerró: silencio >24h tras cotización'\n    ELSE 'Sin respuesta del cliente >24h tras cotización'\n  END AS last_reason\nFROM leads\nWHERE stage = 'en_proceso'\n  AND quoted_at IS NOT NULL\n  AND last_client_at IS NOT NULL\n  AND last_client_at <= now() - interval '24 hours'\n  AND score_cierre < 50\nORDER BY id ASC;",
+        "options": {}
+      },
+      "id": "sel-silencio",
+      "name": "Leads en silencio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET\n  stage = $2,\n  score_potencial = $3,\n  score_silencio = $4,\n  last_reason = $5,\n  updated_at = now()\nWHERE id = $1\n  AND stage = 'en_proceso'\n  AND score_cierre < 50;",
+        "options": {
+          "queryReplacement": "={{ [$json.id, $json.stage, $json.score_potencial, $json.score_silencio, $json.last_reason] }}"
+        }
+      },
+      "id": "upd-silencio",
+      "name": "Marcar silencio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [440, 0],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lead_score_events (\n  lead_id, stage, score_potencial, score_engagement, score_cierre, score_silencio,\n  sentiment, reason, source\n)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'silence_cron')\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$('Leads en silencio').item.json.id, $('Leads en silencio').item.json.stage, $('Leads en silencio').item.json.score_potencial, $('Leads en silencio').item.json.score_engagement, $('Leads en silencio').item.json.score_cierre, $('Leads en silencio').item.json.score_silencio, $('Leads en silencio').item.json.sentiment_last, $('Leads en silencio').item.json.last_reason] }}"
+        }
+      },
+      "id": "evt-silencio",
+      "name": "Registrar evento",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 0],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cada 15 min": {
+      "main": [
+        [
+          {
+            "node": "Leads en silencio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leads en silencio": {
+      "main": [
+        [
+          {
+            "node": "Marcar silencio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar silencio": {
+      "main": [
+        [
+          {
+            "node": "Registrar evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

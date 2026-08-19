@@ -1,148 +1,105 @@
-# Sistema de seguimientos — arquitectura v1
+# Sistema de seguimientos — arquitectura v2
 
-Un vendedor escribe en Telegram (solo texto) y el asistente crea seguimientos en Postgres. El aviso real sale en el mismo chat, a las 10:00 hora Venezuela: 3 días antes y el día. No hay calendario ni app propia: orquesta n8n en un VPS.
-
-Estado actual: chat y cron funcionando. Este documento describe lo que hay hoy, no un roadmap.
+Un vendedor escribe en Telegram. El asistente crea avisos y ahora también **lee el embudo de WhatsApp**. Evolution manda los chats a n8n; el flujo 03 **observa y clasifica**, no responde al huésped. El aviso de seguimiento sigue saliendo en Telegram a las 10:00 Venezuela.
 
 ## Quick path
 
-1. El vendedor manda un mensaje de texto al bot.
-2. El agente confirma nombre, teléfono y fecha (`YYYY-MM-DD`) y llama `crear_seguimiento`.
-3. Postgres guarda **dos filas**: `t3` (fecha − 3 días, 10:00 Caracas) y `day` (la fecha, 10:00 Caracas).
-4. Cada 15 minutos el cron busca `pending` con `fire_at <= now()`, envía Telegram y marca `sent`.
+1. El cliente escribe por WhatsApp (Evolution `messages.upsert`).
+2. El 03 guarda el mensaje, filtra relevancia y actualiza scores/etapa en `leads`.
+3. Si hay cotización y el cliente calla >24 h, el 04 pasa a `pregunto_no_concreto` o `no_respondio`.
+4. En Telegram, Evelin pregunta listas o estadísticas; el 01 consulta esas tablas (no inventa filas).
+5. Los seguimientos T-3 / día siguen igual: 01 crea filas, 02 las dispara.
 
-Si `fire_at` ya pasó al crear, esa fila nace `skipped` y el cron no la manda.
-
-## Stack que se usa ahora
+## Stack
 
 | Pieza | Rol |
 |-------|-----|
-| **n8n** (VPS, HTTPS público) | Orquestación. Telegram no llega a localhost. |
-| **Telegram Bot API** | Canal: trigger de mensajes + envío de respuestas y avisos. |
-| **PostgreSQL** | Fuente de verdad: avisos, memoria corta, resumen durable. |
-| **DeepSeek API** (`deepseek-v4-flash`) | LLM del chat y del compactado. API directa, no OpenRouter. |
-| **LangChain en n8n** | Nodo Agent + Chat Memory + Chain LLM. |
+| **n8n** (VPS, HTTPS) | Orquestación |
+| **Telegram Bot API** | Canal del asistente y de los avisos 10:00 |
+| **Evolution API** | Entrada de WhatsApp (ya conectada por el cliente) |
+| **PostgreSQL** | Avisos, memoria del bot, leads y mensajes |
+| **DeepSeek** (`deepseek-v4-flash`) | Chat Telegram, filtro y clasificación de etapa |
 
-Credenciales en n8n (no en el repo): Telegram, Postgres y DeepSeek. Los JSON del repo llevan placeholders `PEGAR_CRED_*`.
-
-## Dos workflows, dos responsabilidades
+## Cuatro workflows
 
 ```mermaid
 flowchart LR
-  subgraph chat ["01 — Asistente"]
-    TG[Telegram texto] --> AG[Agente DeepSeek]
-    AG --> PG[(Postgres)]
-    AG --> TX[Respuesta al chat]
-  end
-
-  subgraph cron ["02 — Cron"]
-    SCH[Cada 15 min] --> Q[pending y fire_at vencido]
-    Q --> AV[Aviso Telegram]
-    AV --> SENT[status sent]
-  end
-
-  PG -.-> Q
+  WA[WhatsApp / Evolution] --> WF3[03 observador]
+  WF3 --> PG[(Postgres)]
+  WF4[04 silencio 24h] --> PG
+  TG[Telegram asesora] --> WF1[01 asistente]
+  WF1 --> PG
+  PG --> WF2[02 cron avisos]
 ```
 
-| Workflow | Archivo | Qué hace | LLM |
-|----------|---------|----------|-----|
-| Seguimientos: asistente Telegram | `n8n/01-telegram-asistente-seguimientos.json` | Recibe chat, decide, escribe en Postgres, responde | Sí |
-| Seguimientos: cron avisos Telegram | `n8n/02-cron-recordatorios.json` | Dispara avisos vencidos | No |
+| Workflow | Archivo | LLM | Habla con el cliente WA |
+|----------|---------|-----|-------------------------|
+| Asistente Telegram | `01-…json` | Sí | No |
+| Cron avisos | `02-…json` | No | No |
+| Clasificar leads | `03-…json` | Sí | **No** |
+| Cron silencio | `04-…json` | No | No |
 
-Zona horaria de ambos: `America/Caracas`.
+El 03 no es el bot de e-commerce del `example/analizador_sentimiento.json`. Reutiliza el patrón (webhook Evolution + Text Classifier) con dominio de **hospedaje**.
 
-El cron **no** se dispara por un mensaje. Solo lee filas. El chat **no** envía el aviso de las 10:00; solo las programa.
+## Embudo WhatsApp
 
-## Flujo 01 — chat
+Tres casos reales de referencia:
 
-Camino feliz:
+| Etapa | Qué es |
+|-------|--------|
+| `concreto` | Reservó: “para reservar”, formulario con cédula, apartar, abonar, pagar |
+| `pregunto_no_concreto` | Preguntó mucho post-cotización y no cerró |
+| `no_respondio` | Recibió cotización/formulario y casi no volvió |
+| `en_proceso` | Todavía activo |
 
-Telegram Trigger → ¿hay texto y no es bot? → Config → Cargar resumen → Preparar input → Agente → Responder Telegram → Contar memoria → compactar si hay más de 20 filas.
+Scores 0–100 en `leads`: `score_cierre`, `score_engagement`, `score_silencio`, `score_potencial` (difusión si hay interés y **no** reservó).
 
-| Nodo / pieza | Qué decide |
-|--------------|------------|
-| Config | Timezone, hora 10, T-3, ventana 10, compactar a 20, allowlist opcional de `chat.id`. |
-| Preparar input | System prompt con hoy/año Venezuela, reglas de fecha y el resumen durable. |
-| Agente | Hasta 8 iteraciones. Modelo `deepseek-v4-flash`, temperatura 0.2. |
-| Postgres Chat Memory | Últimas 10 interacciones, `session_id` = `chat.id`. |
-| Responder Telegram | Manda `$json.output` al mismo chat. |
+Reglas fijas encima del LLM: señales de pago/reserva fuerzan `concreto`; un `concreto` no se pisa; si el cliente acaba de escribir no puede quedar `no_respondio`.
 
-Mensajes sin texto (stickers, fotos) y mensajes de bots se descartan. Si `allowedChatIds` tiene valores, el resto no entra al agente.
+### Camino del 03
 
-### Tools del agente
-
-Son `n8n-nodes-base.postgresTool` v2.6 (no el nodo Postgres del camino lineal). Si se importan como Postgres normal, n8n las deja sueltas y el agente no las ve.
-
-| Tool | Quién fija el SQL | Qué hace el modelo |
-|------|-------------------|--------------------|
-| `crear_seguimiento` | SQL fijo: inserta `t3` + `day` a las 10:00 Caracas | Solo `client_name`, `client_phone`, `estimated_date` |
-| `listar_seguimientos` | SQL fijo filtrado por este `chat.id` | Nada: lista `pending` y `skipped` |
-| `cancelar_seguimiento` | SQL fijo: `pending` → `cancelled` | Nombre (≥3 letras) o teléfono |
-
-El `telegram_chat_id` **nunca** lo elige el LLM: sale del trigger. Teléfono se normaliza (dígitos y `+`). Unique `(telegram_chat_id, client_phone, estimated_date, kind)`. Un `sent` no se pisa en conflicto.
-
-Reglas de fecha (inyectadas cada mensaje):
-
-- Rango (`28/08 al 30/08`) → **primera** fecha.
-- Día/mes sin año → año vigente en Venezuela.
-- Formato a la tool: `YYYY-MM-DD`.
-- Pedir confirmación explícita antes de crear.
-
-## Flujo 02 — cron
-
-Cada 15 min:
-
-1. `SELECT` filas `pending` con `fire_at <= now()`.
-2. Telegram: T-3 o “seguimiento HOY”, con cliente, teléfono y fecha.
-3. `UPDATE` a `sent` usando el `id` del SELECT (`$('Avisos vencidos')`), no el output de Telegram (ese nodo pierde el id).
-
-Antes de las 10:00 no hay avisos del día, aunque el cron ya haya corrido.
+Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta mensaje (idempotente) → si es la asesora, solo guarda (detecta cotización) → si es cliente con texto → historial 20 msgs → **Text Classifier** → si `relevante`, DeepSeek etapa + reglas → `lead_score_events`.
 
 ## Datos
 
-Definidos en `n8n/schema.sql`.
-
 | Tabla | Para qué |
 |-------|----------|
-| `followup_reminders` | Avisos. Estados: `pending`, `sent`, `cancelled`, `skipped`. |
-| `assistant_chat_messages` | Memoria corta del nodo Postgres Chat Memory. |
-| `conversation_summaries` | Resumen durable (≤800 caracteres) cuando se compacta. |
+| `followup_reminders` | Avisos T-3 y día |
+| `assistant_chat_messages` / `conversation_summaries` | Memoria del bot Telegram |
+| `leads` | Un WhatsApp = un lead (etapa + scores) |
+| `whatsapp_messages` | Historial (incluye `from_me`) |
+| `lead_score_events` | Auditoría de cada clasificación o silencio |
 
-Memoria en dos capas:
+## Tools del asistente
 
-1. Ventana de 10 interacciones en el agente.
-2. Si hay más de 20 filas, DeepSeek resume lo viejo, se guarda en `conversation_summaries` y se borran las filas fuera de las 20 más nuevas. El resumen entra al system prompt del siguiente mensaje.
+Postgres Tool v2.6. El `chat.id` de Telegram no lo elige el LLM. Las listas de leads salen de SQL fijo.
 
-## Decisiones que importan
+| Tool | Pregunta típica |
+|------|-----------------|
+| `crear_seguimiento` | Crear aviso |
+| `listar_seguimientos` / `cancelar_seguimiento` | Pendientes |
+| `listar_leads_potenciales` | “¿A quién le mando una difusión?” |
+| `listar_preguntan_sin_reservar` | “Los que preguntan y no reservan” |
+| `estadisticas_leads_mes` | “% de reservas de este mes” |
+
+## Decisiones
 
 | Tema | Decisión |
 |------|----------|
-| Aviso real | Telegram, no Google Calendar. |
-| LLM | DeepSeek directo (`deepseek-v4-flash`). Compactar usa el mismo modelo. |
-| Cálculo de horas | SQL en Postgres, no el modelo. |
-| Fechas pasadas al crear | `skipped`, no se envían. |
-| Alcance del chat | Solo seguimientos. No inventa clientes ni fechas. |
-| Dominio | Proyecto nuevo. No Fibralan, Drive ni Tinify. |
-
-Gotcha conocido: si al usar tools aparece `reasoning_content must be passed back`, el thinking de V4 está prendido. Apagar thinking o usar el nodo OpenAI Chat Model con `https://api.deepseek.com` y la misma key.
-
-## Archivos del repo
-
-| Ruta | Contenido |
-|------|-----------|
-| `n8n/schema.sql` | Tablas e índices |
-| `n8n/01-telegram-asistente-seguimientos.json` | Chat + agente + tools |
-| `n8n/02-cron-recordatorios.json` | Cron de avisos |
-| `n8n/README.md` | Cómo importar y mapear credenciales |
+| WhatsApp | Observador. La asesora sigue hablando. |
+| Aviso 10:00 | Telegram, no Calendar. |
+| Clasificación | Filtro de relevancia + etapa de embudo, no tags de e-commerce. |
+| `concreto` | Regla por frases de reserva/pago, no solo sentimiento. |
+| Secretos | Credenciales en n8n. JSON del repo: `PEGAR_CRED_*`. |
 
 ## Checklist
 
-- [ ] Entiendo que hay dos workflows y que el cron no se dispara por chat.
-- [ ] Sé qué stack corre hoy: n8n, Telegram, Postgres, DeepSeek v4-flash.
-- [ ] Sé las tres tools: crear, listar, cancelar — y que el `chat.id` no lo decide el LLM.
-- [ ] Sé que un seguimiento son dos avisos a las 10:00 Caracas (`t3` y `day`).
-- [ ] Sé que la memoria corta son 10 turnos y el resto vive en un resumen de 800 caracteres.
+- [ ] El 03 no envía mensajes a WhatsApp.
+- [ ] Evolution apunta al webhook `seguimientos-leads`.
+- [ ] `schema.sql` v2 ya corrió (existen `leads` y `whatsapp_messages`).
+- [ ] El 01 tiene las tres tools de leads como `postgresTool`.
+- [ ] Un `concreto` no baja de etapa por silencio.
 
 ## Next step
 
-Operación e importación: [`n8n/README.md`](../n8n/README.md).
+Importación y Evolution: [`n8n/README.md`](../n8n/README.md).

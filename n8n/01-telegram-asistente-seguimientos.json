@@ -8,7 +8,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Setup v1\n1. Corre `n8n/schema.sql` en Postgres.\n2. Mapea credenciales: Telegram, Postgres, DeepSeek.\n3. `allowedChatIds` en Config: vacío = todos; o `123,456` para allowlist.\n4. n8n debe tener HTTPS público (webhook de Telegram).\n5. Activa este workflow y prueba texto. El cron va aparte.\n\nLas tools del agente son **Postgres Tool** (`postgresTool` v2.6), no el nodo Postgres del flujo.\nModelo: `deepseek-v4-flash`.\nSi falla con `reasoning_content` al usar tools, apaga thinking o usa OpenAI Chat Model con base URL `https://api.deepseek.com` y la misma key.",
+        "content": "## Setup v2\n1. Corre `n8n/schema.sql` en Postgres (incluye leads WhatsApp).\n2. Mapea credenciales: Telegram, Postgres, DeepSeek.\n3. `allowedChatIds` en Config: vacío = todos; o `123,456` para allowlist.\n4. n8n debe tener HTTPS público (webhook de Telegram y de Evolution).\n5. Activa este workflow y prueba texto. Cron avisos = 02. WhatsApp leads = 03+04.\n\nLas tools del agente son **Postgres Tool** (`postgresTool` v2.6), no el nodo Postgres del flujo.\nModelo: `deepseek-v4-flash`.\nSi falla con `reasoning_content` al usar tools, apaga thinking o usa OpenAI Chat Model con base URL `https://api.deepseek.com` y la misma key.",
         "height": 380,
         "width": 460,
         "color": 7
@@ -183,7 +183,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst allowed = String(cfg.allowedChatIds || '').trim();\nif (allowed) {\n  const ids = allowed.split(',').map((s) => s.trim()).filter(Boolean);\n  if (!ids.includes(String(chatId))) {\n    return [];\n  }\n}\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst todayIso = now.toISODate();\nconst year = now.year;\nconst systemMessage = [\n  'Eres un asistente de seguimientos comerciales en Telegram. Respondes en español, breve y claro.',\n  'Zona horaria fija: America/Caracas. Los avisos se disparan SIEMPRE a las 10:00 hora Venezuela.',\n  'Un seguimiento son DOS avisos: t3 (3 días antes de la fecha estimada) y day (el mismo día).',\n  'Tú NO calculas esas horas: llama crear_seguimiento con nombre, teléfono y fecha YYYY-MM-DD.',\n  `Hoy en Venezuela: ${todayIso} (${now.toFormat('cccc d LLLL yyyy, HH:mm')}). Año vigente: ${year}.`,\n  'Reglas de fecha (obligatorias):',\n  `- Si el cliente manda un rango (ej. \"28/08 al 30/08\", \"del 28 al 30\", \"28-30/08\", \"28/08 - 30/08\"), usa SOLO la PRIMERA fecha como estimated_date. Ignora la fecha final del rango.`,\n  `- Si el cliente manda día y mes sin año (28/08, 28-08, 28 de agosto), completa el año con el año vigente de Venezuela (${year}). No preguntes el año.`,\n  '- estimated_date para la herramienta SIEMPRE en formato YYYY-MM-DD, con ese año vigente.',\n  `- Ejemplo: hoy es ${todayIso} y el mensaje dice \"Fecha de reserva: 28/08 al 30/08\" → estimated_date = ${year}-08-28.`,\n  'Si falta nombre, teléfono o cualquier fecha, pregunta. Si dice \"el viernes\" u otra fecha relativa, confirma el YYYY-MM-DD usando la fecha de hoy en Venezuela.',\n  'Antes de crear, resume los datos (incluyendo la fecha YYYY-MM-DD que vas a usar) y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes y cancelar_seguimiento con nombre o teléfono.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nreturn [{\n  json: {\n    chatInput: String(msg.text || '').trim(),\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n    todayIso,\n    year,\n  },\n}];\n"
+        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst allowed = String(cfg.allowedChatIds || '').trim();\nif (allowed) {\n  const ids = allowed.split(',').map((s) => s.trim()).filter(Boolean);\n  if (!ids.includes(String(chatId))) {\n    return [];\n  }\n}\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst todayIso = now.toISODate();\nconst year = now.year;\nconst systemMessage = [\n  'Eres un asistente de seguimientos comerciales en Telegram. Respondes en español, breve y claro.',\n  'Zona horaria fija: America/Caracas. Los avisos se disparan SIEMPRE a las 10:00 hora Venezuela.',\n  'Un seguimiento son DOS avisos: t3 (3 días antes de la fecha estimada) y day (el mismo día).',\n  'Tú NO calculas esas horas: llama crear_seguimiento con nombre, teléfono y fecha YYYY-MM-DD.',\n  `Hoy en Venezuela: ${todayIso} (${now.toFormat('cccc d LLLL yyyy, HH:mm')}). Año vigente: ${year}.`,\n  'Reglas de fecha (obligatorias):',\n  `- Si el cliente manda un rango (ej. \"28/08 al 30/08\", \"del 28 al 30\", \"28-30/08\", \"28/08 - 30/08\"), usa SOLO la PRIMERA fecha como estimated_date. Ignora la fecha final del rango.`,\n  `- Si el cliente manda día y mes sin año (28/08, 28-08, 28 de agosto), completa el año con el año vigente de Venezuela (${year}). No preguntes el año.`,\n  '- estimated_date para la herramienta SIEMPRE en formato YYYY-MM-DD, con ese año vigente.',\n  `- Ejemplo: hoy es ${todayIso} y el mensaje dice \"Fecha de reserva: 28/08 al 30/08\" → estimated_date = ${year}-08-28.`,\n  'Si falta nombre, teléfono o cualquier fecha, pregunta. Si dice \"el viernes\" u otra fecha relativa, confirma el YYYY-MM-DD usando la fecha de hoy en Venezuela.',\n  'Antes de crear, resume los datos (incluyendo la fecha YYYY-MM-DD que vas a usar) y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes y cancelar_seguimiento con nombre o teléfono.',\n  'También consultas el embudo de WhatsApp: listar_leads_potenciales (difusión), listar_preguntan_sin_reservar (preguntan y no cierran) y estadisticas_leads_mes (conteos y % del mes; periodo YYYY-MM o el mes actual).',\n  'No inventes teléfonos, scores ni porcentajes: si la tool no trae filas, dilo. No ofrezcas enviar la difusión tú; solo lista y resume.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nreturn [{\n  json: {\n    chatInput: String(msg.text || '').trim(),\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n    todayIso,\n    year,\n  },\n}];\n"
       },
       "id": "prep",
       "name": "Preparar input",
@@ -200,7 +200,7 @@
         "text": "={{ $json.chatInput }}",
         "options": {
           "systemMessage": "={{ $json.systemMessage }}",
-          "maxIterations": 8
+          "maxIterations": 10
         }
       },
       "id": "agent",
@@ -327,6 +327,77 @@
       "typeVersion": 2.6,
       "position": [
         1780,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lista clientes de WhatsApp para una posible difusion: no reservaron, con score_potencial. Incluye pregunto_no_concreto, no_respondio y en_proceso callados >12h tras cotizacion. No inventes filas.",
+        "operation": "executeQuery",
+        "query": "SELECT display_name, phone, stage,\n       score_potencial, score_engagement, score_cierre, score_silencio,\n       sentiment_last,\n       to_char(last_client_at AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD HH24:MI') AS last_client_local,\n       last_reason\nFROM leads\nWHERE stage IN ('pregunto_no_concreto', 'no_respondio')\n   OR (\n     stage = 'en_proceso'\n     AND quoted_at IS NOT NULL\n     AND score_cierre < 50\n     AND score_potencial >= 40\n     AND last_client_at <= now() - interval '12 hours'\n   )\nORDER BY score_potencial DESC, last_client_at DESC NULLS LAST\nLIMIT 30;",
+        "options": {}
+      },
+      "id": "tool-leads-pot",
+      "name": "listar_leads_potenciales",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1980,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lista clientes de WhatsApp que preguntan mucho y no reservan (engagement alto, cierre bajo, no concreto). Para 'los que preguntan y nunca cierran'.",
+        "operation": "executeQuery",
+        "query": "SELECT display_name, phone, stage, score_engagement, score_cierre,\n       client_msg_count,\n       to_char(last_client_at AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD HH24:MI') AS last_client_local,\n       last_reason\nFROM leads\nWHERE stage <> 'concreto'\n  AND score_engagement >= 50\n  AND score_cierre < 50\nORDER BY score_engagement DESC, client_msg_count DESC\nLIMIT 30;",
+        "options": {}
+      },
+      "id": "tool-leads-ask",
+      "name": "listar_preguntan_sin_reservar",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2180,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Estadistica del embudo WhatsApp en un mes: conversaciones, reservaron, preguntaron sin cerrar, no respondieron, en proceso y pct_reservaciones. periodo en YYYY-MM; si el usuario no dice mes, pasa el mes actual de Venezuela.",
+        "operation": "executeQuery",
+        "query": "WITH periodo AS (\n  SELECT CASE\n    WHEN $1::text ~ '^[0-9]{4}-[0-9]{2}$' THEN ($1::text || '-01')::date\n    ELSE (timezone('America/Caracas', now()))::date\n  END AS d\n),\nbounds AS (\n  SELECT date_trunc('month', d) AS start_at,\n         date_trunc('month', d) + interval '1 month' AS end_at\n  FROM periodo\n),\nfirst_touch AS (\n  SELECT lead_id, MIN(occurred_at) AS first_at\n  FROM whatsapp_messages\n  WHERE NOT from_me\n  GROUP BY lead_id\n)\nSELECT\n  to_char(b.start_at, 'YYYY-MM') AS periodo,\n  COUNT(l.id)::int AS conversaciones,\n  COUNT(*) FILTER (WHERE l.stage = 'concreto')::int AS reservaron,\n  COUNT(*) FILTER (WHERE l.stage = 'pregunto_no_concreto')::int AS preguntaron_sin_cerrar,\n  COUNT(*) FILTER (WHERE l.stage = 'no_respondio')::int AS no_respondieron,\n  COUNT(*) FILTER (WHERE l.stage = 'en_proceso')::int AS en_proceso,\n  ROUND(\n    100.0 * COUNT(*) FILTER (WHERE l.stage = 'concreto') / NULLIF(COUNT(l.id), 0),\n    1\n  ) AS pct_reservaciones\nFROM bounds b\nLEFT JOIN first_touch f\n  ON f.first_at >= b.start_at AND f.first_at < b.end_at\nLEFT JOIN leads l ON l.id = f.lead_id\nGROUP BY b.start_at;",
+        "options": {
+          "queryReplacement": "={{ [$fromAI('periodo', 'Mes a consultar en YYYY-MM. Si el usuario no indica mes, usa el mes actual de Venezuela', 'string')] }}"
+        }
+      },
+      "id": "tool-leads-stats",
+      "name": "estadisticas_leads_mes",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2380,
         240
       ],
       "credentials": {
@@ -657,6 +728,39 @@
       ]
     },
     "cancelar_seguimiento": {
+      "ai_tool": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "listar_leads_potenciales": {
+      "ai_tool": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "listar_preguntan_sin_reservar": {
+      "ai_tool": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "estadisticas_leads_mes": {
       "ai_tool": [
         [
           {

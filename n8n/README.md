@@ -1,44 +1,60 @@
-# n8n — sistema-seguimiento v1
+# n8n — sistema-seguimiento v2
 
-Bot de Telegram (solo texto) que crea seguimientos en Postgres y avisa en el mismo chat. Sin Google Calendar.
+Bot de Telegram que crea seguimientos y consulta el embudo de WhatsApp. Evolution solo alimenta Postgres: **el flujo 03 no responde al cliente**.
 
-Arquitectura, stack y tools: [`docs/arquitectura.md`](../docs/arquitectura.md).
+Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
+
+## Quick path
+
+1. En Postgres, ejecuta `schema.sql` (si ya corriste v1, vuelve a correrlo: las tablas nuevas son `IF NOT EXISTS`).
+2. Importa los cuatro JSON (quedan inactivos).
+3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-v4-flash`).
+4. En Evolution, webhook POST a `https://<n8n>/webhook/seguimientos-leads` (evento `messages.upsert`).
+5. Activa 01, prueba un mensaje. Luego 02, 03 y 04.
 
 ## Archivos
 
-| Archivo | Qué es |
-|---|---|
-| `schema.sql` | Tablas: avisos, resumen durable, memoria corta |
-| `01-telegram-asistente-seguimientos.json` | Chat + agente DeepSeek + tools |
-| `02-cron-recordatorios.json` | Avisos cada 15 min, sin LLM |
+| Archivo | Qué es | LLM |
+|---------|--------|-----|
+| `schema.sql` | Avisos, memoria, **leads WhatsApp** | — |
+| `01-telegram-asistente-seguimientos.json` | Chat + tools (seguimientos y embudo) | Sí |
+| `02-cron-recordatorios.json` | Avisos 10:00 Caracas | No |
+| `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores | Sí (filtro + etapa) |
+| `04-cron-silencio-leads.json` | Silencio >24 h tras cotización | No |
 
-## Cómo importar
+n8n tiene que ser alcanzable por HTTPS (`WEBHOOK_URL`). Telegram y Evolution no hablan con localhost.
 
-1. En Postgres, ejecuta `schema.sql`.
-2. En n8n: **Import from File** cada JSON (quedan inactivos).
-3. En cada nodo, mapea credenciales reales:
-   - Telegram (el mismo bot en ambos flujos)
-   - Postgres
-   - DeepSeek (`DeepSeek account` → modelo `deepseek-v4-flash`)
-4. En **Config** del flujo 01, opcional: `allowedChatIds` con los chat id permitidos, separados por coma.
-5. Activa primero el 01 y prueba un mensaje. Luego el 02.
+Zona horaria: `America/Caracas`.
 
-n8n tiene que ser alcanzable por HTTPS (`WEBHOOK_URL`). Telegram no habla con localhost.
+## Flujo 03 — qué hace
 
-Zona horaria de ambos workflows: `America/Caracas`. Los avisos se guardan a las 10:00 local (T-3 y el día). El cron corre cada 15 min y solo envía `pending` con `fire_at <= now()`.
+Guarda los dos lados del chat. Solo clasifica **texto del cliente** que el Text Classifier marca `relevante` (fechas, precios, habitación, reserva). Cotización de la asesora (`OPCIONES DISPONIBLES`, formulario) marca `quoted_at`. No envía WhatsApp.
 
-## Memoria del chat
+## Flujo 04 — silencio
 
-- `assistant_chat_messages`: el nodo **Postgres Chat Memory** inyecta las últimas **10 interacciones**.
-- Si hay más de 20 filas, **Compactar historial** resume lo viejo (máx. 800 caracteres) en `conversation_summaries` y borra el resto.
-- El resumen entra al system prompt para no perder clientes/fechas antiguas.
+Si `en_proceso`, hay cotización, el cliente lleva >24 h callado y `score_cierre < 50`:
 
-## Tools del agente
+- engagement alto → `pregunto_no_concreto`
+- engagement bajo → `no_respondio`
 
-`crear_seguimiento`, `listar_seguimientos` y `cancelar_seguimiento` son **Postgres Tool** (`n8n-nodes-base.postgresTool` v2.6). El nodo Postgres normal (`n8n-nodes-base.postgres`) queda para el flujo principal (cargar resumen, compactar, cron). Si se importan como Postgres normal, n8n los deja sueltos y el agente no los ve.
+No pisa `concreto`.
 
-En el canvas: Agent → Tools → Postgres. Borrar el tool vacío "Execute a SQL query" (exige Query).
+## Tools del agente (01)
+
+Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el agente no las ve.
+
+| Tool | Para qué |
+|------|----------|
+| `crear_seguimiento` / `listar_seguimientos` / `cancelar_seguimiento` | Avisos Telegram |
+| `listar_leads_potenciales` | Difusión: no reservaron, con potencial |
+| `listar_preguntan_sin_reservar` | Preguntan mucho y no cierran |
+| `estadisticas_leads_mes` | Conteos y `%` del mes (`YYYY-MM`) |
+
+## Memoria del chat Telegram
+
+- `assistant_chat_messages`: últimas **10 interacciones**.
+- Si hay más de 20 filas, compacta a `conversation_summaries` (máx. 800 caracteres).
 
 ## Si el agente falla al usar tools
 
-Error típico: `reasoning_content must be passed back`. En V4 el thinking viene prendido. Opciones: community node que apague thinking, o **OpenAI Chat Model** con base URL `https://api.deepseek.com`, la misma API key y modelo `deepseek-v4-flash`.
+Error típico: `reasoning_content must be passed back`. Apagar thinking, o **OpenAI Chat Model** con base URL `https://api.deepseek.com`, la misma key y modelo `deepseek-v4-flash`.
