@@ -14,7 +14,7 @@
 | Bot de Telegram en producción | https://t.me/eve_leads_bot |
 | Webhook Evolution API (WhatsApp) | https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads |
 | Instancia n8n (privada) | https://demo-n8n.hiti0l.easypanel.host/ *(acceso restringido; ver nota arriba)* |
-| Video de Demostración (YouTube) | *Pendiente de publicación* |
+| Video de Demostración (YouTube) | https://youtu.be/Q20pbcjGBMI |
 | Evidencia en repositorio | `docs/evidencia/` (capturas DBeaver de tablas en producción) |
 
 ---
@@ -209,7 +209,7 @@ LIMIT 5;
 | Bot Telegram | Abrir [@eve_leads_bot](https://t.me/eve_leads_bot) y enviar "listar seguimientos" o "estadísticas de este mes" |
 | Repositorio | Clonar https://github.com/fyarza/n8n-sistema-seguimiento e importar workflows |
 | Webhook WhatsApp | Evolution apunta a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` |
-| Video demo | *Pendiente — se actualizará el enlace en el documento final* |
+| Video demo | https://youtu.be/Q20pbcjGBMI |
 
 ---
 

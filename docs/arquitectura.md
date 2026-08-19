@@ -100,6 +100,7 @@ Postgres Tool v2.6. El `chat.id` de Telegram no lo elige el LLM. Las listas de l
 | Webhook Evolution | https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads |
 | Instancia n8n | https://demo-n8n.hiti0l.easypanel.host/ *(privada)* |
 | Repositorio | https://github.com/fyarza/n8n-sistema-seguimiento |
+| Video demo (YouTube) | https://youtu.be/Q20pbcjGBMI |
 
 ## Checklist
 

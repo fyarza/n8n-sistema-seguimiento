@@ -4,6 +4,8 @@ Bot de Telegram que crea seguimientos y consulta el embudo de WhatsApp. Evolutio
 
 Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 
+**Recursos:** [Bot Telegram](https://t.me/eve_leads_bot) · [Video demo](https://youtu.be/Q20pbcjGBMI) · [Repositorio](https://github.com/fyarza/n8n-sistema-seguimiento)
+
 ## Quick path
 
 1. En Postgres, ejecuta `schema.sql` (si ya corriste v1, vuelve a correrlo: las tablas nuevas son `IF NOT EXISTS`).

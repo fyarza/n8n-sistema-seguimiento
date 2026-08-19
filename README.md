@@ -12,7 +12,7 @@ Asistente conversacional en Telegram para programar avisos comerciales y consult
 | Bot Telegram | https://t.me/eve_leads_bot |
 | Webhook Evolution (prod.) | https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads |
 | Instancia n8n | https://demo-n8n.hiti0l.easypanel.host/ *(acceso privado; evaluación vía bot, webhook y evidencia en repo)* |
-| Video demo | *Pendiente de publicación en YouTube* |
+| Video demo | https://youtu.be/Q20pbcjGBMI |
 
 ## Documentación
 
