@@ -9,7 +9,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 1. En Postgres, ejecuta `schema.sql` (si ya corriste v1, vuelve a correrlo: las tablas nuevas son `IF NOT EXISTS`).
 2. Importa los cuatro JSON (quedan inactivos).
 3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-v4-flash`).
-4. En Evolution, webhook POST a `https://<n8n>/webhook/seguimientos-leads` (evento `messages.upsert`).
+4. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
 5. Activa 01, prueba un mensaje. Luego 02, 03 y 04.
 
 ## Archivos
