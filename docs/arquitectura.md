@@ -1,6 +1,6 @@
 # Sistema de seguimientos — arquitectura v2
 
-Un vendedor escribe en Telegram. El asistente crea avisos y ahora también **lee el embudo de WhatsApp**. Evolution manda los chats a n8n; el flujo 03 **observa y clasifica**, no responde al huésped. El aviso de seguimiento sigue saliendo en Telegram a las 10:00 Venezuela.
+Un vendedor escribe en Telegram. El asistente crea avisos comerciales (T-3 y día a las 10:00) y **avisos de llegada** (16:00 y 20:00 el día del check-in). También **lee el embudo de WhatsApp**. Evolution manda los chats a n8n; el flujo 03 **observa y clasifica**, no responde al huésped.
 
 ## Quick path
 
@@ -8,14 +8,14 @@ Un vendedor escribe en Telegram. El asistente crea avisos y ahora también **lee
 2. El 03 guarda el mensaje, filtra relevancia y actualiza scores/etapa en `leads`.
 3. Si hay cotización y el cliente calla >24 h, el 04 pasa a `pregunto_no_concreto` o `no_respondio`.
 4. En Telegram, Evelin pregunta listas o estadísticas; el 01 consulta esas tablas (no inventa filas).
-5. Los seguimientos T-3 / día siguen igual: 01 crea filas, 02 las dispara.
+5. Comercial T-3 / día a las 10:00, o llegada a las 16:00 y 20:00: el 01 crea filas, el 02 las dispara.
 
 ## Stack
 
 | Pieza | Rol |
 |-------|-----|
 | **n8n** (VPS, HTTPS) | Orquestación |
-| **Telegram Bot API** | Canal del asistente y de los avisos 10:00 |
+| **Telegram Bot API** | Canal del asistente y de los avisos 10:00 / 16:00 / 20:00 |
 | **Evolution API** | Entrada de WhatsApp (ya conectada por el cliente) |
 | **PostgreSQL** | Avisos, memoria del bot, leads y mensajes |
 | **DeepSeek** (`deepseek-v4-flash`) | Chat Telegram, filtro y clasificación de etapa |
@@ -64,7 +64,7 @@ Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta m
 
 | Tabla | Para qué |
 |-------|----------|
-| `followup_reminders` | Avisos T-3 y día |
+| `followup_reminders` | Avisos comerciales (t3, day) y de llegada (arrival_16, arrival_20) |
 | `assistant_chat_messages` / `conversation_summaries` | Memoria del bot Telegram |
 | `leads` | Un WhatsApp = un lead (etapa + scores) |
 | `whatsapp_messages` | Historial (incluye `from_me`) |
@@ -76,18 +76,25 @@ Postgres Tool v2.6. El `chat.id` de Telegram no lo elige el LLM. Las listas de l
 
 | Tool | Pregunta típica |
 |------|-----------------|
-| `crear_seguimiento` | Crear aviso |
-| `listar_seguimientos` / `cancelar_seguimiento` | Pendientes |
+| `crear_seguimiento` | Aviso comercial T-3 + día, 10:00 |
+| `crear_seguimiento_llegada` | Check-in: 16:00 y 20:00 el mismo día |
+| `listar_seguimientos` | Pendientes (distingue comercial vs llegada) |
+| `cancelar_seguimiento` | Cancela; `tipo`: llegada, comercial o todos |
 | `listar_leads_potenciales` | “¿A quién le mando una difusión?” |
 | `listar_preguntan_sin_reservar` | “Los que preguntan y no reservan” |
 | `estadisticas_leads_mes` | “% de reservas de este mes” |
+| `listar_leads_reporte` | Listado por nombre del mes |
+
+Si menciona **llegada** / check-in, el 01 llama `crear_seguimiento_llegada` (no el comercial). Cancelar pasa `tipo` para no borrar el otro producto del mismo cliente.
 
 ## Decisiones
 
 | Tema | Decisión |
 |------|----------|
 | WhatsApp | Observador. La asesora sigue hablando. |
-| Aviso 10:00 | Telegram, no Calendar. |
+| Aviso comercial 10:00 | Telegram, no Calendar. T-3 y día. |
+| Aviso de llegada | El día del check-in, 16:00 y 20:00 Venezuela. Lo configura Evelin; no sale del 03. |
+| Cancelar | Filtro `tipo` (llegada / comercial / todos) para no borrar el otro producto. |
 | Clasificación | Filtro de relevancia + etapa de embudo, no tags de e-commerce. |
 | `concreto` | Regla por frases de reserva/pago, no solo sentimiento. |
 | Secretos | Credenciales en n8n. JSON del repo: `PEGAR_CRED_*`. |
@@ -107,8 +114,10 @@ Postgres Tool v2.6. El `chat.id` de Telegram no lo elige el LLM. Las listas de l
 - [ ] El 03 no envía mensajes a WhatsApp.
 - [ ] Evolution apunta al webhook `seguimientos-leads`.
 - [ ] `schema.sql` v2 ya corrió (existen `leads` y `whatsapp_messages`).
-- [ ] El 01 tiene las tres tools de leads como `postgresTool`.
+- [ ] Se re-ejecutó `schema.sql` (ALTER de `kind`: `arrival_16`, `arrival_20`).
+- [ ] El 01 tiene las tools de leads y `crear_seguimiento_llegada` como `postgresTool`.
 - [ ] Un `concreto` no baja de etapa por silencio.
+- [ ] Cancelar una llegada no borra el T-3 comercial del mismo cliente.
 
 ## Next step
 

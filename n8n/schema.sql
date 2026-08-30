@@ -1,7 +1,9 @@
 -- sistema-seguimiento v2
--- Zona horaria de negocio: America/Caracas. Avisos a las 10:00 local.
+-- Zona horaria de negocio: America/Caracas.
+-- Comercial: avisos 10:00 (t3 y day). Llegada: 16:00 y 20:00 (arrival_16, arrival_20).
 -- Correr este script en Postgres ANTES de activar los workflows de n8n.
 -- v2 añade leads de WhatsApp (Evolution). Es idempotente (IF NOT EXISTS).
+-- Re-ejecutar actualiza el CHECK de kind (llegada) en bases ya desplegadas.
 
 CREATE TABLE IF NOT EXISTS followup_reminders (
   id BIGSERIAL PRIMARY KEY,
@@ -9,7 +11,7 @@ CREATE TABLE IF NOT EXISTS followup_reminders (
   client_name TEXT NOT NULL,
   client_phone TEXT NOT NULL,
   estimated_date DATE NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('t3', 'day')),
+  kind TEXT NOT NULL CHECK (kind IN ('t3', 'day', 'arrival_16', 'arrival_20')),
   fire_at TIMESTAMPTZ NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'sent', 'cancelled', 'skipped')),
@@ -25,6 +27,11 @@ CREATE INDEX IF NOT EXISTS idx_followup_due
 
 CREATE INDEX IF NOT EXISTS idx_followup_chat
   ON followup_reminders (telegram_chat_id, status);
+
+-- Postgres ya desplegado: CREATE TABLE IF NOT EXISTS no cambia el CHECK viejo.
+ALTER TABLE followup_reminders DROP CONSTRAINT IF EXISTS followup_reminders_kind_check;
+ALTER TABLE followup_reminders ADD CONSTRAINT followup_reminders_kind_check
+  CHECK (kind IN ('t3', 'day', 'arrival_16', 'arrival_20'));
 
 -- Resumen durable fuera de la ventana de 10 interacciones.
 CREATE TABLE IF NOT EXISTS conversation_summaries (

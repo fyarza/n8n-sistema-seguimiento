@@ -8,8 +8,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Cron de avisos (sin LLM)\nDispara cada 15 min. Solo envía filas `pending` con `fire_at <= now()`.\nLos eventos se crean a las 10:00 America/Caracas, así que antes de las 10 no sale nada.\n\n1. Corre `n8n/schema.sql`.\n2. Mapea credenciales Telegram + Postgres.\n3. Activa después de probar el chat.",
-        "height": 280,
+        "content": "## Cron de avisos (sin LLM)\nDispara cada 15 min. Solo envía filas `pending` con `fire_at <= now()`.\nComercial: 10:00 (t3 / day). Llegada: 16:00 y 20:00 (arrival_16 / arrival_20).\nEl SELECT no filtra por hora: sale cuando `fire_at` ya pasó.\n\n1. Corre `n8n/schema.sql` (incluye ALTER de kind).\n2. Mapea credenciales Telegram + Postgres.\n3. Activa después de probar el chat.",
+        "height": 340,
         "width": 420,
         "color": 7
       },
@@ -67,7 +67,7 @@
       "parameters": {
         "operation": "sendMessage",
         "chatId": "={{ $json.telegram_chat_id }}",
-        "text": "={{ [$json.kind === 't3' ? '📅 Recordatorio: seguimiento en 3 días' : '📅 Recordatorio: seguimiento HOY', '', 'Cliente: ' + $json.client_name, 'Teléfono: ' + $json.client_phone, 'Fecha estimada: ' + $json.estimated_date, '', 'Hora Venezuela: 10:00'].join('\\n') }}",
+        "text": "={{ (() => { const k = String($json.kind || ''); const isLlegada = k === 'arrival_16' || k === 'arrival_20'; const title = k === 't3' ? '📅 Recordatorio: seguimiento en 3 días' : k === 'day' ? '📅 Recordatorio: seguimiento HOY' : k === 'arrival_16' ? '📅 Seguimiento de llegada — 16:00' : k === 'arrival_20' ? '📅 Seguimiento de llegada — 20:00' : '📅 Recordatorio'; const hora = k === 'arrival_16' ? '16:00' : k === 'arrival_20' ? '20:00' : '10:00'; const fechaLabel = isLlegada ? 'Fecha de llegada: ' : 'Fecha estimada: '; const lines = [title, '', 'Cliente: ' + $json.client_name, 'Teléfono: ' + $json.client_phone, fechaLabel + $json.estimated_date, '', 'Hora Venezuela: ' + hora]; if (isLlegada) { lines.push('', 'Escribe por WhatsApp para ver si todo fue bien.'); } return lines.join('\\n'); })() }}",
         "additionalFields": {
           "appendAttribution": false
         }

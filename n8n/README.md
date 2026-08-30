@@ -8,7 +8,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 
 ## Quick path
 
-1. En Postgres, ejecuta `schema.sql` (si ya corriste v1, vuelve a correrlo: las tablas nuevas son `IF NOT EXISTS`).
+1. En Postgres, ejecuta `schema.sql` (si ya corriste v1/v2, vuelve a correrlo: tablas nuevas son `IF NOT EXISTS`; el ALTER actualiza `kind` para llegada).
 2. Importa los cuatro JSON (quedan inactivos).
 3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-v4-flash`).
 4. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
@@ -20,7 +20,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 |---------|--------|-----|
 | `schema.sql` | Avisos, memoria, **leads WhatsApp** | — |
 | `01-telegram-asistente-seguimientos.json` | Chat + tools (seguimientos y embudo) | Sí |
-| `02-cron-recordatorios.json` | Avisos 10:00 Caracas | No |
+| `02-cron-recordatorios.json` | Avisos 10:00 / 16:00 / 20:00 Caracas | No |
 | `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores | Sí (filtro + etapa) |
 | `04-cron-silencio-leads.json` | Silencio >24 h tras cotización | No |
 
@@ -47,7 +47,10 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 
 | Tool | Para qué |
 |------|----------|
-| `crear_seguimiento` / `listar_seguimientos` / `cancelar_seguimiento` | Avisos Telegram |
+| `crear_seguimiento` | Comercial: t3 + day a las 10:00 |
+| `crear_seguimiento_llegada` | Llegada: 16:00 y 20:00 el día indicado |
+| `listar_seguimientos` | Pendientes, con tipo legible |
+| `cancelar_seguimiento` | Cancela; pasa `tipo`: `llegada`, `comercial` o `todos` |
 | `listar_leads_potenciales` | Difusión: no reservaron, con potencial |
 | `listar_preguntan_sin_reservar` | Preguntan mucho y no cierran |
 | `estadisticas_leads_mes` | Conteos y `%` del mes (`YYYY-MM`) |
