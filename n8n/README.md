@@ -9,10 +9,11 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 ## Quick path
 
 1. En Postgres, ejecuta `schema.sql` (si ya corriste v1/v2, vuelve a correrlo: tablas nuevas son `IF NOT EXISTS`; el ALTER actualiza `kind` para llegada).
-2. Importa los cuatro JSON (quedan inactivos).
+2. Importa los cinco JSON (quedan inactivos).
 3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-v4-flash`).
 4. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
-5. Activa 01, prueba un mensaje. Luego 02, 03 y 04.
+5. Activa 01, prueba un mensaje. Luego 02, 03, 04 y **05**.
+6. En el 01, tool `enviar_grafica`: elige el workflow 05 y refresca los inputs (`telegram_chat_id`, `tipo`, `periodo`). El 05 tiene que estar **publicado**.
 
 ## Archivos
 
@@ -23,6 +24,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 | `02-cron-recordatorios.json` | Avisos 10:00 / 16:00 / 20:00 Caracas | No |
 | `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores | Sí (filtro + etapa) |
 | `04-cron-silencio-leads.json` | Silencio >24 h tras cotización | No |
+| `05-telegram-grafica-reportes.json` | SQL → QuickChart → foto Telegram | No |
 
 n8n tiene que ser alcanzable por HTTPS (`WEBHOOK_URL`). Telegram y Evolution no hablan con localhost.
 
@@ -55,6 +57,9 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `listar_preguntan_sin_reservar` | Preguntan mucho y no cierran |
 | `estadisticas_leads_mes` | Conteos y `%` del mes (`YYYY-MM`) |
 | `listar_leads_reporte` | Listado por nombre: `concretaron`, `no_concretaron` o `atendidos` (mes YYYY-MM) |
+| `enviar_grafica` | Tool Workflow: dispara el 05. `embudo_mes` o `reservas_dia` |
+
+`enviar_grafica` **no** es postgresTool. Tras importar, selecciona el workflow 05 (el JSON trae `PEGAR_ID_WORKFLOW_05`). QuickChart: `Config.quickchartUrl` en el 05 (`http://quickchart:80/chart` o `https://demo-quickchart.hiti0l.easypanel.host/chart`).
 
 ## Memoria del chat Telegram
 
