@@ -13,7 +13,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-v4-flash`).
 4. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
 5. Activa 01, prueba un mensaje. Luego 02, 03, 04 y **05**.
-6. En el 01, tool `enviar_grafica`: elige el workflow 05 y refresca los inputs (`telegram_chat_id`, `tipo`, `periodo`). El 05 tiene que estar **publicado**.
+6. En el 01, tool `enviar_grafica`: elige el workflow 05 y refresca los inputs (`telegram_chat_id`, `tipo`, `periodo`, `estilo`). El 05 tiene que estar **publicado**.
 
 ## Archivos
 
@@ -58,7 +58,7 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `estadisticas_leads_mes` | Conteos del mes: `reservaron` = cierres (certificado o primer concreto), incluye recurrentes |
 | `listar_leads_reporte` | Listado: `concretaron` (cierre **en ese mes**), `no_concretaron`, `atendidos`. Campo `origen` |
 | `consultar_ficha_lead` | Ficha de un teléfono/nombre: first_touch, certificados y avisos |
-| `enviar_grafica` | Tool Workflow: dispara el 05. `embudo_mes` o `reservas_dia` |
+| `enviar_grafica` | Tool Workflow: dispara el 05. `embudo_mes`, `reservas_dia` o `reservas_origen`. Estilo: `barras`, `pie`, `lineas` |
 
 `enviar_grafica` **no** es postgresTool. Tras importar, selecciona el workflow 05 (el JSON trae `PEGAR_ID_WORKFLOW_05`). QuickChart: `Config.quickchartUrl` en el 05 (`http://quickchart:80/chart` o `https://demo-quickchart.hiti0l.easypanel.host/chart`).
 

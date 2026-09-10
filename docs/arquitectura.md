@@ -91,7 +91,7 @@ Postgres Tool v2.6. El `chat.id` de Telegram no lo elige el LLM. Las listas de l
 | `estadisticas_leads_mes` | Conteos del mes: `reservaron` son cierres (no el primer mensaje) |
 | `listar_leads_reporte` | Listado del mes; `concretaron` incluye recurrentes (`origen`) |
 | `consultar_ficha_lead` | Revisar un cliente: first_touch, certificados, avisos |
-| `enviar_grafica` | PNG al chat: `embudo_mes` o `reservas_dia` (flujo 05) |
+| `enviar_grafica` | PNG: `embudo_mes`, `reservas_dia` o `reservas_origen`; estilo `barras` / `pie` / `lineas` |
 
 Si menciona **llegada** / check-in, el 01 llama `crear_seguimiento_llegada` (no el comercial). Cancelar pasa `tipo` para no borrar el otro producto del mismo cliente. Si pide **gráfica**, el 01 llama `enviar_grafica`; el 05 pinta y manda la foto. Los nombres del mes salen de `listar_leads_reporte` (`concretaron` = cierre en ese mes, incluye quien ya había reservado antes). Un cliente concreto se revisa con `consultar_ficha_lead`.
 
@@ -105,7 +105,7 @@ Si menciona **llegada** / check-in, el 01 llama `crear_seguimiento_llegada` (no 
 | Cancelar | Filtro `tipo` (llegada / comercial / todos) para no borrar el otro producto. |
 | Clasificación | Filtro de relevancia + etapa de embudo, no tags de e-commerce. |
 | `concreto` | Regla por frases de reserva/pago, no solo sentimiento. |
-| Gráfica | Subflujo 05 + QuickChart. El 01 no pega PNG en sendMessage. |
+| Gráfica | Subflujo 05 + QuickChart. Tipos: embudo, por día (nuevos/recurrentes) u origen. Estilos: barras, pie, líneas (con fallback si no aplica). |
 | Reporte mensual | Cierre del mes (certificado o primer concreto), no el primer mensaje. Un teléfono puede aparecer en varios meses. |
 | Secretos | Credenciales en n8n. JSON del repo: `PEGAR_CRED_*`. |
 
