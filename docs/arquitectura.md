@@ -88,11 +88,12 @@ Postgres Tool v2.6. El `chat.id` de Telegram no lo elige el LLM. Las listas de l
 | `cancelar_seguimiento` | Cancela; `tipo`: llegada, comercial o todos |
 | `listar_leads_potenciales` | “¿A quién le mando una difusión?” |
 | `listar_preguntan_sin_reservar` | “Los que preguntan y no reservan” |
-| `estadisticas_leads_mes` | “% de reservas de este mes” |
-| `listar_leads_reporte` | Listado por nombre del mes |
+| `estadisticas_leads_mes` | Conteos del mes: `reservaron` son cierres (no el primer mensaje) |
+| `listar_leads_reporte` | Listado del mes; `concretaron` incluye recurrentes (`origen`) |
+| `consultar_ficha_lead` | Revisar un cliente: first_touch, certificados, avisos |
 | `enviar_grafica` | PNG al chat: `embudo_mes` o `reservas_dia` (flujo 05) |
 
-Si menciona **llegada** / check-in, el 01 llama `crear_seguimiento_llegada` (no el comercial). Cancelar pasa `tipo` para no borrar el otro producto del mismo cliente. Si pide **gráfica**, el 01 llama `enviar_grafica`; el 05 pinta y manda la foto. Los nombres siguen en `listar_leads_reporte`.
+Si menciona **llegada** / check-in, el 01 llama `crear_seguimiento_llegada` (no el comercial). Cancelar pasa `tipo` para no borrar el otro producto del mismo cliente. Si pide **gráfica**, el 01 llama `enviar_grafica`; el 05 pinta y manda la foto. Los nombres del mes salen de `listar_leads_reporte` (`concretaron` = cierre en ese mes, incluye quien ya había reservado antes). Un cliente concreto se revisa con `consultar_ficha_lead`.
 
 ## Decisiones
 
@@ -105,6 +106,7 @@ Si menciona **llegada** / check-in, el 01 llama `crear_seguimiento_llegada` (no 
 | Clasificación | Filtro de relevancia + etapa de embudo, no tags de e-commerce. |
 | `concreto` | Regla por frases de reserva/pago, no solo sentimiento. |
 | Gráfica | Subflujo 05 + QuickChart. El 01 no pega PNG en sendMessage. |
+| Reporte mensual | Cierre del mes (certificado o primer concreto), no el primer mensaje. Un teléfono puede aparecer en varios meses. |
 | Secretos | Credenciales en n8n. JSON del repo: `PEGAR_CRED_*`. |
 
 ## Producción

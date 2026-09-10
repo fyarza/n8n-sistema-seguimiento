@@ -55,8 +55,9 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `cancelar_seguimiento` | Cancela; pasa `tipo`: `llegada`, `comercial` o `todos` |
 | `listar_leads_potenciales` | Difusión: no reservaron, con potencial |
 | `listar_preguntan_sin_reservar` | Preguntan mucho y no cierran |
-| `estadisticas_leads_mes` | Conteos y `%` del mes (`YYYY-MM`) |
-| `listar_leads_reporte` | Listado por nombre: `concretaron`, `no_concretaron` o `atendidos` (mes YYYY-MM) |
+| `estadisticas_leads_mes` | Conteos del mes: `reservaron` = cierres (certificado o primer concreto), incluye recurrentes |
+| `listar_leads_reporte` | Listado: `concretaron` (cierre **en ese mes**), `no_concretaron`, `atendidos`. Campo `origen` |
+| `consultar_ficha_lead` | Ficha de un teléfono/nombre: first_touch, certificados y avisos |
 | `enviar_grafica` | Tool Workflow: dispara el 05. `embudo_mes` o `reservas_dia` |
 
 `enviar_grafica` **no** es postgresTool. Tras importar, selecciona el workflow 05 (el JSON trae `PEGAR_ID_WORKFLOW_05`). QuickChart: `Config.quickchartUrl` en el 05 (`http://quickchart:80/chart` o `https://demo-quickchart.hiti0l.easypanel.host/chart`).
