@@ -64,7 +64,7 @@ Reglas fijas encima del LLM: señales de pago/reserva fuerzan `concreto`; un `co
 
 ### Camino del 03
 
-Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta mensaje (idempotente) → si es la asesora, solo guarda (detecta cotización) → si es cliente con texto → historial 20 msgs → **Text Classifier** → si `relevante`, DeepSeek etapa + reglas → `lead_score_events`.
+Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta mensaje (idempotente) → si es la asesora, solo guarda (detecta cotización) → si es **imagen del cliente**, Evolution baja el binario y DeepSeek vision (`deepseek-flash`) extrae `media_signal` → historial 20 msgs → filtro de relevancia → si `relevante`, DeepSeek etapa + reglas → `lead_score_events`. Señal `pago` (comprobante) fuerza `concreto`. Texto sigue el mismo camino.
 
 ## Datos
 
@@ -73,7 +73,7 @@ Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta m
 | `followup_reminders` | Avisos comerciales (t3, day) y de llegada (arrival_16, arrival_20) |
 | `assistant_chat_messages` / `conversation_summaries` | Memoria del bot Telegram |
 | `leads` | Un WhatsApp = un lead (etapa + scores) |
-| `whatsapp_messages` | Historial (incluye `from_me`) |
+| `whatsapp_messages` | Historial (incluye `from_me`, `media_analysis`, `media_signal`) |
 | `lead_score_events` | Auditoría de cada clasificación o silencio |
 
 ## Tools del asistente
@@ -104,7 +104,7 @@ Si menciona **llegada** / check-in, el 01 llama `crear_seguimiento_llegada` (no 
 | Aviso de llegada | El día del check-in, 16:00 y 20:00 Venezuela. Lo configura Evelin; no sale del 03. |
 | Cancelar | Filtro `tipo` (llegada / comercial / todos) para no borrar el otro producto. |
 | Clasificación | Filtro de relevancia + etapa de embudo, no tags de e-commerce. |
-| `concreto` | Regla por frases de reserva/pago, no solo sentimiento. |
+| `concreto` | Regla por frases de reserva/pago **o** imagen con `media_signal=pago`. |
 | Gráfica | Subflujo 05 + QuickChart. Tipos: embudo, por día (nuevos/recurrentes) u origen. Estilos: barras, pie, líneas (con fallback si no aplica). |
 | Reporte mensual | Cierre del mes (certificado o primer concreto), no el primer mensaje. Un teléfono puede aparecer en varios meses. |
 | Secretos | Credenciales en n8n. JSON del repo: `PEGAR_CRED_*`. |
@@ -124,7 +124,8 @@ Si menciona **llegada** / check-in, el 01 llama `crear_seguimiento_llegada` (no 
 - [ ] El 03 no envía mensajes a WhatsApp.
 - [ ] Evolution apunta al webhook `seguimientos-leads`.
 - [ ] `schema.sql` v2 ya corrió (existen `leads` y `whatsapp_messages`).
-- [ ] Se re-ejecutó `schema.sql` (ALTER de `kind`: `arrival_16`, `arrival_20`).
+- [ ] Se re-ejecutó `schema.sql` (ALTER de `kind` y columnas `media_analysis` / `media_signal`).
+- [ ] El 03 tiene credencial OpenAI (DeepSeek vision) con Base URL `https://api.deepseek.com/v1`.
 - [ ] El 01 tiene las tools de leads y `crear_seguimiento_llegada` como `postgresTool`.
 - [ ] El 05 está activo y la tool `enviar_grafica` del 01 apunta a su ID (no `PEGAR_ID_WORKFLOW_05`).
 - [ ] Un `concreto` no baja de etapa por silencio.

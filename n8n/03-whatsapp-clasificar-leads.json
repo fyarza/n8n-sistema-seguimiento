@@ -8,8 +8,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (tablas leads).\n2. Mapea Postgres + DeepSeek (`deepseek-v4-flash`).\n3. En Evolution, webhook POST a este path: `seguimientos-leads`.\n4. Guarda los dos lados (`fromMe` incluido). Solo clasifica texto del cliente relevante.\n5. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.",
-        "height": 360,
+        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-v4-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. En Evolution, webhook POST a este path: `seguimientos-leads`.\n4. Guarda los dos lados (`fromMe` incluido). Clasifica texto relevante y **imágenes del cliente**.\n5. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n6. Imagen con señal `pago` (comprobante) fuerza `concreto`. Media expirada no rompe el flujo.",
+        "height": 440,
         "width": 480,
         "color": 7
       },
@@ -40,7 +40,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function unwrapMessage(msg) {\n  if (!msg || typeof msg !== 'object') return {};\n  const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage'];\n  for (const w of wrappers) {\n    if (msg[w] && msg[w].message) return unwrapMessage(msg[w].message);\n  }\n  return msg;\n}\n\nconst root = $input.first().json || {};\nconst payload = root.body && root.body.data ? root.body : root;\nconst event = String(payload.event || '');\nif (event && event !== 'messages.upsert') {\n  return [];\n}\nconst data = payload.data || {};\nconst key = data.key || {};\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid.includes('status@broadcast') || remoteJid.endsWith('@broadcast')) {\n  return [];\n}\nconst alt = String(key.remoteJidAlt || '');\nconst jidForPhone = alt.includes('@s.whatsapp.net') ? alt : remoteJid;\nconst phone = jidForPhone.replace(/[^0-9]/g, '');\nif (!phone) {\n  return [];\n}\n\nconst msg = unwrapMessage(data.message || {});\nconst declared = String(data.messageType || '');\nconst mimeOf = (obj) => String((obj && obj.mimetype) || '');\n\nlet contentType = 'unknown';\nif (msg.extendedTextMessage || msg.conversation || declared === 'conversation' || declared === 'extendedTextMessage') {\n  contentType = 'text';\n}\nif (msg.imageMessage || declared === 'imageMessage' || mimeOf(msg.documentMessage).startsWith('image/')) {\n  contentType = 'image';\n}\nif (msg.videoMessage || msg.ptvMessage || declared === 'videoMessage' || declared === 'ptvMessage') {\n  contentType = 'video';\n}\nif (msg.audioMessage || declared === 'audioMessage') {\n  contentType = 'audio';\n}\nif (msg.stickerMessage || declared === 'stickerMessage') {\n  contentType = 'sticker';\n}\nif ((msg.documentMessage || declared === 'documentMessage') && contentType === 'unknown') {\n  contentType = 'document';\n}\n\nconst caption = [\n  (msg.extendedTextMessage && msg.extendedTextMessage.text) || '',\n  msg.conversation || '',\n  (msg.imageMessage && msg.imageMessage.caption) || '',\n  (msg.videoMessage && msg.videoMessage.caption) || '',\n  (msg.documentMessage && (msg.documentMessage.caption || msg.documentMessage.fileName)) || '',\n].join('').trim();\n\nconst labels = {\n  image: '[Imagen enviada]',\n  video: '[Video enviado]',\n  audio: '[Audio enviado]',\n  sticker: '[Sticker enviado]',\n  document: '[Documento enviado]',\n};\nlet content = caption;\nif (labels[contentType]) {\n  content = caption ? `${labels[contentType]} ${caption}` : labels[contentType];\n}\n\nconst ts = data.messageTimestamp;\nlet occurredAt;\nif (typeof ts === 'number') {\n  occurredAt = DateTime.fromSeconds(ts).toISO();\n} else if (ts && typeof ts.low === 'number') {\n  occurredAt = DateTime.fromSeconds(ts.low).toISO();\n} else {\n  occurredAt = DateTime.now().setZone('America/Caracas').toISO();\n}\n\nreturn [{\n  json: {\n    whatsapp_jid: remoteJid,\n    phone,\n    display_name: String(data.pushName || ''),\n    from_me: Boolean(key.fromMe),\n    message_id: String(key.id || `${remoteJid}-${occurredAt}`),\n    content_type: contentType,\n    body: content,\n    occurred_at: occurredAt,\n  },\n}];"
+        "jsCode": "function unwrapMessage(msg) {\n  if (!msg || typeof msg !== 'object') return {};\n  const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage'];\n  for (const w of wrappers) {\n    if (msg[w] && msg[w].message) return unwrapMessage(msg[w].message);\n  }\n  return msg;\n}\n\nconst root = $input.first().json || {};\nconst payload = root.body && root.body.data ? root.body : root;\nconst event = String(payload.event || '');\nif (event && event !== 'messages.upsert') {\n  return [];\n}\nconst data = payload.data || {};\nconst key = data.key || {};\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid.includes('status@broadcast') || remoteJid.endsWith('@broadcast')) {\n  return [];\n}\nconst alt = String(key.remoteJidAlt || '');\nconst jidForPhone = alt.includes('@s.whatsapp.net') ? alt : remoteJid;\nconst phone = jidForPhone.replace(/[^0-9]/g, '');\nif (!phone) {\n  return [];\n}\n\nconst msg = unwrapMessage(data.message || {});\nconst declared = String(data.messageType || '');\nconst mimeOf = (obj) => String((obj && obj.mimetype) || '');\n\nlet contentType = 'unknown';\nif (msg.extendedTextMessage || msg.conversation || declared === 'conversation' || declared === 'extendedTextMessage') {\n  contentType = 'text';\n}\nif (msg.imageMessage || declared === 'imageMessage' || mimeOf(msg.documentMessage).startsWith('image/')) {\n  contentType = 'image';\n}\nif (msg.videoMessage || msg.ptvMessage || declared === 'videoMessage' || declared === 'ptvMessage') {\n  contentType = 'video';\n}\nif (msg.audioMessage || declared === 'audioMessage') {\n  contentType = 'audio';\n}\nif (msg.stickerMessage || declared === 'stickerMessage') {\n  contentType = 'sticker';\n}\nif ((msg.documentMessage || declared === 'documentMessage') && contentType === 'unknown') {\n  contentType = 'document';\n}\n\nconst caption = [\n  (msg.extendedTextMessage && msg.extendedTextMessage.text) || '',\n  msg.conversation || '',\n  (msg.imageMessage && msg.imageMessage.caption) || '',\n  (msg.videoMessage && msg.videoMessage.caption) || '',\n  (msg.documentMessage && (msg.documentMessage.caption || msg.documentMessage.fileName)) || '',\n].join('').trim();\n\nconst labels = {\n  image: '[Imagen enviada]',\n  video: '[Video enviado]',\n  audio: '[Audio enviado]',\n  sticker: '[Sticker enviado]',\n  document: '[Documento enviado]',\n};\nlet content = caption;\nif (labels[contentType]) {\n  content = caption ? `${labels[contentType]} ${caption}` : labels[contentType];\n}\n\nconst ts = data.messageTimestamp;\nlet occurredAt;\nif (typeof ts === 'number') {\n  occurredAt = DateTime.fromSeconds(ts).toISO();\n} else if (ts && typeof ts.low === 'number') {\n  occurredAt = DateTime.fromSeconds(ts.low).toISO();\n} else {\n  occurredAt = DateTime.now().setZone('America/Caracas').toISO();\n}\n\nreturn [{\n  json: {\n    whatsapp_jid: remoteJid,\n    phone,\n    display_name: String(data.pushName || ''),\n    from_me: Boolean(key.fromMe),\n    message_id: String(key.id || `${remoteJid}-${occurredAt}`),\n    content_type: contentType,\n    body: content,\n    occurred_at: occurredAt,\n    evo_server_url: String(payload.server_url || (root.body && root.body.server_url) || '').replace(/\\/$/, ''),\n    evo_instance: String(payload.instance || (root.body && root.body.instance) || ''),\n    evo_apikey: String(payload.apikey || (root.body && root.body.apikey) || ''),\n  },\n}];\n"
       },
       "id": "norm",
       "name": "Normalizar",
@@ -101,7 +101,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const lead = $('Upsert lead').first().json || {};\nconst norm = $('Normalizar').first().json || {};\nconst ins = $input.first().json || {};\nif (!ins.id) {\n  return [];\n}\nconst quoteRe = /OPCIONES DISPONIBLES|FORMULARIO DE REGISTRO|DETALLES DE TU ESTANCIA|cotizaci[oó]n y (fotos|videos)/i;\nreturn [{\n  json: {\n    lead_id: lead.id,\n    message_id: ins.id,\n    from_me: Boolean(norm.from_me),\n    is_quote: Boolean(norm.from_me && quoteRe.test(String(norm.body || ''))),\n    body: String(norm.body || ''),\n    stage_prev: lead.stage,\n    quoted_at: lead.quoted_at || null,\n    score_cierre_prev: Number(lead.score_cierre || 0),\n    client_msg_count: Number(lead.client_msg_count || 0),\n  },\n}];"
+        "jsCode": "const lead = $('Upsert lead').first().json || {};\nconst norm = $('Normalizar').first().json || {};\nconst ins = $input.first().json || {};\nif (!ins.id) {\n  return [];\n}\nconst quoteRe = /OPCIONES DISPONIBLES|FORMULARIO DE REGISTRO|DETALLES DE TU ESTANCIA|cotizaci[oó]n y (fotos|videos)/i;\nreturn [{\n  json: {\n    lead_id: lead.id,\n    message_id: ins.id,\n    from_me: Boolean(norm.from_me),\n    is_quote: Boolean(norm.from_me && quoteRe.test(String(norm.body || ''))),\n    body: String(norm.body || ''),\n    content_type: String(norm.content_type || 'text'),\n    stage_prev: lead.stage,\n    quoted_at: lead.quoted_at || null,\n    score_cierre_prev: Number(lead.score_cierre || 0),\n    client_msg_count: Number(lead.client_msg_count || 0),\n  },\n}];\n"
       },
       "id": "prep-upd",
       "name": "Preparar update",
@@ -211,7 +211,7 @@
       "typeVersion": 2.2,
       "position": [
         1540,
-        80
+        220
       ]
     },
     {
@@ -228,7 +228,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT from_me, body,\n       to_char(occurred_at AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD HH24:MI') AS occurred_local\nFROM whatsapp_messages\nWHERE lead_id = $1\n  AND btrim(body) <> ''\nORDER BY occurred_at DESC, id DESC\nLIMIT 20;",
+        "query": "SELECT id, from_me, body, media_signal,\n       to_char(occurred_at AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD HH24:MI') AS occurred_local\nFROM whatsapp_messages\nWHERE lead_id = $1\n  AND btrim(body) <> ''\nORDER BY occurred_at DESC, id DESC\nLIMIT 20;",
         "options": {
           "queryReplacement": "={{ $('Actualizar contadores').first().json.id }}"
         }
@@ -251,7 +251,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const lead = $('Actualizar contadores').first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst lines = $input.all()\n  .map((item) => item.json)\n  .filter((row) => row && row.body)\n  .reverse()\n  .map((row) => {\n    const who = row.from_me ? 'ASESORA' : 'CLIENTE';\n    return `[${row.occurred_local || ''}] ${who}: ${row.body}`;\n  });\nreturn [{\n  json: {\n    lead_id: lead.id,\n    message_id: prep.message_id,\n    stage_prev: lead.stage,\n    quoted_at: lead.quoted_at || null,\n    client_msg_count: Number(lead.client_msg_count || 0),\n    score_cierre_prev: Number(lead.score_cierre || 0),\n    contexto: lines.join('\\n') || 'Sin historial previo.',\n    mensaje: String(prep.body || ''),\n  },\n}];"
+        "jsCode": "const lead = $('Actualizar contadores').first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst rows = $input.all()\n  .map((item) => item.json)\n  .filter((row) => row && row.body);\nconst current = rows.find((row) => Number(row.id) === Number(prep.message_id)) || null;\nconst signals = { pago: true, reserva: true, consulta: true, ninguna: true };\nconst rawSignal = current ? String(current.media_signal || '') : '';\nconst image_signal = signals[rawSignal] ? rawSignal : 'ninguna';\nconst mensaje = current && current.body ? String(current.body) : String(prep.body || '');\nconst lines = rows\n  .slice()\n  .reverse()\n  .map((row) => {\n    const who = row.from_me ? 'ASESORA' : 'CLIENTE';\n    return `[${row.occurred_local || ''}] ${who}: ${row.body}`;\n  });\nreturn [{\n  json: {\n    lead_id: lead.id,\n    message_id: prep.message_id,\n    stage_prev: lead.stage,\n    quoted_at: lead.quoted_at || null,\n    client_msg_count: Number(lead.client_msg_count || 0),\n    score_cierre_prev: Number(lead.score_cierre || 0),\n    contexto: lines.join('\\n') || 'Sin historial previo.',\n    mensaje,\n    image_signal,\n  },\n}];\n"
       },
       "id": "armar-ctx",
       "name": "Armar contexto",
@@ -265,7 +265,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Eres un filtro de mensajes de WhatsApp para un hotel (hospedaje/reservas). No respondas al cliente.\n\nElige UNA categoría para el último mensaje del CLIENTE, MIRANDO EL HISTORIAL:\n- relevante: fechas, precios, habitación, personas, reserva, pago, formulario, consultar con familia, o respuesta a la cotización. Un \"ok\", \"sí\", \"vale\", \"listo\" o \"gracias\" ES relevante si ya hubo cotización, formulario, precios o preguntas de habitación (no cortes el embudo).\n- irrelevante: saludo repetido o emoji solo, SIN historial de cotización/reserva.\n- spam: publicidad ajena, criptos, bots, links raros. Pedir precio del hotel NO es spam.\n- error: sin sentido o solo símbolos. Un typo (ña zona, chamos) NO es error.\n\nHistorial:\n{{ $json.contexto }}\n\nMensaje actual del CLIENTE:\n{{ $json.mensaje }}\n\nResponde SOLO una palabra: relevante, irrelevante, spam o error.",
+        "text": "=Eres un filtro de mensajes de WhatsApp para un hotel (hospedaje/reservas). No respondas al cliente.\n\nElige UNA categoría para el último mensaje del CLIENTE, MIRANDO EL HISTORIAL:\n- relevante: fechas, precios, habitación, personas, reserva, pago, formulario, consultar con familia, o respuesta a la cotización. Un \"ok\", \"sí\", \"vale\", \"listo\" o \"gracias\" ES relevante si ya hubo cotización, formulario, precios o preguntas de habitación (no cortes el embudo).\n- irrelevante: saludo repetido o emoji solo, SIN historial de cotización/reserva.\n- spam: publicidad ajena, criptos, bots, links raros. Pedir precio del hotel NO es spam.\n- error: sin sentido o solo símbolos. Un typo (ña zona, chamos) NO es error.\nSi el mensaje actual empieza con [Imagen] y trae senal=pago, senal=reserva o senal=consulta, es relevante.\n\nHistorial:\n{{ $json.contexto }}\n\nMensaje actual del CLIENTE:\n{{ $json.mensaje }}\n\nResponde SOLO una palabra: relevante, irrelevante, spam o error.",
         "batching": {}
       },
       "id": "clf",
@@ -481,7 +481,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') {\n  raw = JSON.stringify(raw);\n}\nraw = String(raw).replace(/```json/gi, '').replace(/```/g, '').trim();\nlet data = {};\ntry {\n  data = JSON.parse(raw);\n} catch (e) {\n  data = {};\n}\nconst lead = $('Actualizar contadores').first().json || {};\nconst ctx = $('Armar contexto').first().json || {};\nconst body = String(ctx.mensaje || '');\nconst allText = `${ctx.contexto || ''}\\n${body}`;\nconst closeRe = /para reservar|voy a pagar|puedo abonar|me la (puede )?apartar|pagar completo|hacer la reservaci|ya pagu[eé]|env[ií]o (el )?pago/i;\nconst stages = { en_proceso: true, concreto: true, pregunto_no_concreto: true, no_respondio: true };\nconst sentiments = { positivo: true, neutro: true, negativo: true, enfadado: true };\nconst clamp = (n, d) => {\n  const v = Number(n);\n  if (!Number.isFinite(v)) return d;\n  return Math.max(0, Math.min(100, Math.round(v)));\n};\nlet stage = stages[data.stage] ? data.stage : 'en_proceso';\nlet score_cierre = clamp(data.score_cierre, 0);\nlet score_engagement = clamp(data.score_engagement, 0);\nlet score_silencio = clamp(data.score_silencio, 0);\nlet score_potencial = clamp(data.score_potencial, 0);\nlet sentiment = sentiments[data.sentiment] ? data.sentiment : 'neutro';\nlet reason = String(data.reason || '').slice(0, 280);\nif (closeRe.test(allText)) {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, 85);\n  score_potencial = Math.min(score_potencial, 20);\n  reason = reason || 'Señales explícitas de reserva o pago';\n}\nif (lead.stage === 'concreto' || ctx.stage_prev === 'concreto') {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, Number(lead.score_cierre) || 85);\n}\nif (stage === 'no_respondio') {\n  stage = score_engagement >= 55 && (lead.quoted_at || ctx.quoted_at) ? 'pregunto_no_concreto' : 'en_proceso';\n}\nif (stage !== 'concreto') {\n  const blended = Math.round((score_engagement * 0.6) + ((100 - score_cierre) * 0.2) + ((100 - score_silencio) * 0.2));\n  score_potencial = clamp(Math.max(score_potencial, blended), score_potencial);\n}\nreturn [{\n  json: {\n    lead_id: lead.id,\n    stage,\n    score_potencial,\n    score_engagement,\n    score_cierre,\n    score_silencio,\n    sentiment,\n    reason: reason || 'Clasificación de conversación',\n  },\n}];"
+        "jsCode": "const parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') {\n  raw = JSON.stringify(raw);\n}\nraw = String(raw).replace(/```json/gi, '').replace(/```/g, '').trim();\nlet data = {};\ntry {\n  data = JSON.parse(raw);\n} catch (e) {\n  data = {};\n}\nconst lead = $('Actualizar contadores').first().json || {};\nconst ctx = $('Armar contexto').first().json || {};\nconst body = String(ctx.mensaje || '');\nconst allText = `${ctx.contexto || ''}\\n${body}`;\nconst closeRe = /para reservar|voy a pagar|puedo abonar|me la (puede )?apartar|pagar completo|hacer la reservaci|ya pagu[eé]|env[ií]o (el )?pago/i;\nconst stages = { en_proceso: true, concreto: true, pregunto_no_concreto: true, no_respondio: true };\nconst sentiments = { positivo: true, neutro: true, negativo: true, enfadado: true };\nconst clamp = (n, d) => {\n  const v = Number(n);\n  if (!Number.isFinite(v)) return d;\n  return Math.max(0, Math.min(100, Math.round(v)));\n};\nlet stage = stages[data.stage] ? data.stage : 'en_proceso';\nlet score_cierre = clamp(data.score_cierre, 0);\nlet score_engagement = clamp(data.score_engagement, 0);\nlet score_silencio = clamp(data.score_silencio, 0);\nlet score_potencial = clamp(data.score_potencial, 0);\nlet sentiment = sentiments[data.sentiment] ? data.sentiment : 'neutro';\nlet reason = String(data.reason || '').slice(0, 280);\nif (closeRe.test(allText)) {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, 85);\n  score_potencial = Math.min(score_potencial, 20);\n  reason = reason || 'Señales explícitas de reserva o pago';\n}\nif (String(ctx.image_signal || '') === 'pago') {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, 85);\n  score_potencial = Math.min(score_potencial, 20);\n  reason = reason || 'Comprobante de pago en imagen';\n}\nif (lead.stage === 'concreto' || ctx.stage_prev === 'concreto') {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, Number(lead.score_cierre) || 85);\n}\nif (stage === 'no_respondio') {\n  stage = score_engagement >= 55 && (lead.quoted_at || ctx.quoted_at) ? 'pregunto_no_concreto' : 'en_proceso';\n}\nif (stage !== 'concreto') {\n  const blended = Math.round((score_engagement * 0.6) + ((100 - score_cierre) * 0.2) + ((100 - score_silencio) * 0.2));\n  score_potencial = clamp(Math.max(score_potencial, blended), score_potencial);\n}\nreturn [{\n  json: {\n    lead_id: lead.id,\n    stage,\n    score_potencial,\n    score_engagement,\n    score_cierre,\n    score_silencio,\n    sentiment,\n    reason: reason || 'Clasificación de conversación',\n  },\n}];\n"
       },
       "id": "apply",
       "name": "Aplicar reglas",
@@ -540,7 +540,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $('Armar contexto').first().json || {};\nconst parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') raw = JSON.stringify(raw);\nraw = String(raw).toLowerCase();\nconst msg = String(ctx.mensaje || '').trim();\nconst contexto = String(ctx.contexto || '');\nconst inFunnel = Boolean(ctx.quoted_at) || /(OPCIONES DISPONIBLES|FORMULARIO|cotizaci|habitaci|reserva con|€\\d)/i.test(contexto);\nconst shortAck = /^(ok+|okay|okei|vale|si|sí|bueno|listo|gracias|dale|perfecto)[\\s.!,]*$/i.test(msg);\nconst hotelAsk = /(precio|habitaci|disponib|reserv|fecha|noche|adulto|niñ|hosped|apartar|abonar|pagar|cotiz)/i.test(msg);\nlet label = 'irrelevante';\nif (/\\bspam\\b/.test(raw)) label = 'spam';\nelse if (/\\berror\\b/.test(raw) && !/\\brelevante\\b/.test(raw)) label = 'error';\nelse if (shortAck && inFunnel) label = 'relevante';\nelse if (hotelAsk) label = 'relevante';\nelse if (/\\brelevante\\b/.test(raw) && !/\\birrelevante\\b/.test(raw)) label = 'relevante';\nelse if (/\\birrelevante\\b/.test(raw)) label = 'irrelevante';\nelse if (inFunnel && msg.length > 0) label = 'relevante';\nreturn [{ json: { filter_label: label, message_id: ctx.message_id } }];\n"
+        "jsCode": "const ctx = $('Armar contexto').first().json || {};\nconst parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') raw = JSON.stringify(raw);\nraw = String(raw).toLowerCase();\nconst msg = String(ctx.mensaje || '').trim();\nconst contexto = String(ctx.contexto || '');\nconst imageSignal = String(ctx.image_signal || '');\nif (imageSignal === 'pago' || imageSignal === 'reserva' || imageSignal === 'consulta') {\n  return [{ json: { filter_label: 'relevante', message_id: ctx.message_id } }];\n}\nconst captionMatch = msg.match(/Caption:\\s*(.*)$/i);\nconst isImageNone = /^\\[Imagen\\b/i.test(msg) && imageSignal === 'ninguna';\nconst askText = isImageNone ? String(captionMatch ? captionMatch[1] : '') : msg;\nconst inFunnel = Boolean(ctx.quoted_at) || /(OPCIONES DISPONIBLES|FORMULARIO|cotizaci|habitaci|reserva con|€\\d)/i.test(contexto);\nconst shortAck = /^(ok+|okay|okei|vale|si|sí|bueno|listo|gracias|dale|perfecto)[\\s.!,]*$/i.test(askText);\nconst hotelAsk = /(precio|habitaci|disponib|reserv|fecha|noche|adulto|niñ|hosped|apartar|abonar|pagar|cotiz)/i.test(askText);\nlet label = 'irrelevante';\nif (/\\bspam\\b/.test(raw)) label = 'spam';\nelse if (/\\berror\\b/.test(raw) && !/\\brelevante\\b/.test(raw)) label = 'error';\nelse if (shortAck && inFunnel) label = 'relevante';\nelse if (hotelAsk) label = 'relevante';\nelse if (/\\brelevante\\b/.test(raw) && !/\\birrelevante\\b/.test(raw)) label = 'relevante';\nelse if (/\\birrelevante\\b/.test(raw)) label = 'irrelevante';\nelse if (!isImageNone && inFunnel && msg.length > 0) label = 'relevante';\nreturn [{ json: { filter_label: label, message_id: ctx.message_id } }];\n"
       },
       "id": "parse-clf",
       "name": "Parsear filtro",
@@ -665,6 +665,276 @@
         2620,
         80
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-image",
+              "leftValue": "={{ (function () { const norm = $('Normalizar').first().json || {}; const prep = $('Preparar update').first().json || {}; const type = String(norm.content_type || prep.content_type || '').toLowerCase(); const body = String(prep.body || norm.body || ''); return type === 'image' || body.startsWith('[Imagen'); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-img",
+      "name": "Es imagen?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($('Normalizar').first().json.evo_server_url || $('Webhook Evolution').first().json.body.server_url).toString().replace(/\\/$/, '') }}/chat/getBase64FromMediaMessage/{{ encodeURIComponent($('Normalizar').first().json.evo_instance || $('Webhook Evolution').first().json.body.instance || '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $('Normalizar').first().json.evo_apikey || $('Webhook Evolution').first().json.body.apikey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: { key: { id: $('Normalizar').first().json.message_id } }, convertToMp4: false }) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "contentType": "json"
+      },
+      "id": "evo-media",
+      "name": "Evolution media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        400
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst nested = raw.data && typeof raw.data === 'object' ? raw.data : {};\nlet base64 = String(raw.base64 || raw.base64Data || nested.base64 || '');\nbase64 = base64.replace(/^data:image\\/[a-zA-Z0-9.+-]+;base64,/, '');\nconst mimetype = String(raw.mimetype || raw.mimeType || nested.mimetype || 'image/jpeg');\nconst err = raw.error || raw.message || '';\nif (!base64 || base64.length < 32) {\n  return [{ json: { media_ok: false, mimetype, error: String(err || 'sin base64') } }];\n}\nreturn [{ json: { media_ok: true, base64, mimetype } }];\n"
+      },
+      "id": "prep-media",
+      "name": "Preparar media",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-media",
+              "leftValue": "={{ Boolean($json.media_ok) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-media",
+      "name": "Hay media?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base64",
+        "options": {
+          "mimeType": "={{ $json.mimetype }}"
+        }
+      },
+      "id": "conv-img",
+      "name": "Convertir imagen",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        2420,
+        400
+      ],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres analista de imágenes de WhatsApp para un hotel (reservas). NO respondas al cliente.\nMira la imagen adjunta y extrae señales de embudo.\nNo expliques. No uses markdown. La palabra json debe aparecer. Responde SOLO un objeto json.\n\nCaption del cliente (si hay):\n{{ $('Normalizar').first().json.body }}\n\ntipo: comprobante_pago | cedula | formulario | screenshot_reserva | foto_habitacion | otro\ntexto_visible: texto que se lee, máximo 300 caracteres\nsenal_embudo: pago | reserva | consulta | ninguna\nresumen: una frase en español\n\nReglas:\n- Transferencia, pago móvil, Zelle, depósito, captura de banco o recibo => tipo=comprobante_pago y senal_embudo=pago\n- Cédula, DNI, pasaporte o formulario de registro lleno => senal_embudo=reserva\n- Screenshot de reserva o booking confirmada => senal_embudo=reserva\n- Foto de habitación, hotel o pregunta visual sin pago => senal_embudo=consulta\n- Selfie, meme o irrelevante => senal_embudo=ninguna\n\nFormato json:\n{\"tipo\":\"otro\",\"texto_visible\":\"\",\"senal_embudo\":\"ninguna\",\"resumen\":\"...\"}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "HumanMessagePromptTemplate",
+              "messageType": "imageBinary",
+              "binaryImageDataKey": "data",
+              "imageDetail": "high"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "analyze-img",
+      "name": "Analizar imagen",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2640,
+        400
+      ],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "deepseek-flash"
+        },
+        "options": {
+          "temperature": 0,
+          "maxTokens": 2048,
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "ds-vision",
+      "name": "DeepSeek Vision",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        2640,
+        560
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "PEGAR_CRED_OPENAI_DEEPSEEK",
+          "name": "OpenAI (DeepSeek vision)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fb-flag",
+              "name": "fallback",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "fb-text",
+              "name": "text",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fallback-img",
+      "name": "Fallback imagen",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2420,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $input.first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst norm = $('Normalizar').first().json || {};\nconst extra = parsed.additional_kwargs || parsed.additionalKwargs || {};\nlet data = {};\nlet raw = '';\nif (parsed.tipo || parsed.senal_embudo) {\n  data = parsed;\n  raw = JSON.stringify({\n    tipo: parsed.tipo,\n    texto_visible: parsed.texto_visible,\n    senal_embudo: parsed.senal_embudo,\n    resumen: parsed.resumen,\n  });\n} else {\n  raw = parsed.text || parsed.output || parsed.response || parsed.message\n    || parsed.reasoning_content || parsed.reasoning || extra.reasoning_content || '';\n  if (raw && typeof raw === 'object') raw = JSON.stringify(raw);\n  raw = String(raw).replace(/```json/gi, '').replace(/```/g, '').trim();\n  if (!raw.startsWith('{')) {\n    const dumped = JSON.stringify(parsed);\n    const match = dumped.match(/\\{[^{}]*\"tipo\"\\s*:\\s*\"[^\"]+\"[^{}]*\\}/);\n    if (match) raw = match[0];\n  }\n  try {\n    data = JSON.parse(raw);\n  } catch (e) {\n    data = {};\n  }\n}\nconst tipos = {\n  comprobante_pago: true,\n  cedula: true,\n  formulario: true,\n  screenshot_reserva: true,\n  foto_habitacion: true,\n  otro: true,\n};\nconst senales = { pago: true, reserva: true, consulta: true, ninguna: true };\nconst mediaOk = !parsed.fallback && !parsed.error && raw.startsWith('{') && Boolean(data.tipo || data.senal_embudo);\nconst tipo = mediaOk && tipos[data.tipo] ? data.tipo : 'otro';\nlet senal = 'ninguna';\nif (mediaOk && senales[data.senal_embudo]) senal = data.senal_embudo;\nif (mediaOk && tipo === 'comprobante_pago') senal = 'pago';\nconst texto_visible = String(data.texto_visible || '').slice(0, 300);\nconst resumen = String(data.resumen || '').slice(0, 280);\nconst caption = String(norm.body || '').replace(/^\\[Imagen enviada\\]\\s*/i, '').trim();\nconst analysis = mediaOk\n  ? JSON.stringify({ tipo, texto_visible, senal_embudo: senal, resumen })\n  : null;\nconst body = mediaOk\n  ? [`[Imagen] tipo=${tipo} senal=${senal}: ${resumen || 'sin resumen'}`, texto_visible ? `Texto: ${texto_visible}` : '', caption ? `Caption: ${caption}` : ''].filter(Boolean).join(' ')\n  : (caption ? `[Imagen no disponible] ${caption}` : '[Imagen no disponible]');\nreturn [{\n  json: {\n    message_id: prep.message_id,\n    media_analysis: analysis,\n    media_signal: senal,\n    body,\n  },\n}];\n"
+      },
+      "id": "parse-img",
+      "name": "Parsear análisis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE whatsapp_messages\nSET media_analysis = $2,\n    media_signal = $3,\n    body = $4\nWHERE id = $1\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.message_id, $json.media_analysis, $json.media_signal, $json.body] }}"
+        }
+      },
+      "id": "save-img",
+      "name": "Guardar análisis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3080,
+        400
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Imagen cliente → DeepSeek vision\nSolo `from_me=false` y `content_type=image`.\nEvolution `getBase64FromMediaMessage` + Convert to File.\nModelo: `deepseek-flash`. El nodo nativo DeepSeek suele no adjuntar la imagen; si Analizar imagen no ve el binario, usar OpenAI Chat Model con Base URL `https://api.deepseek.com/v1`.\nSeñal `pago` → `concreto` en Aplicar reglas.",
+        "height": 300,
+        "width": 520,
+        "color": 5
+      },
+      "id": "note-img",
+      "name": "Nota imagen",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        680
+      ]
     }
   ],
   "connections": {
@@ -745,7 +1015,7 @@
         ],
         [
           {
-            "node": "Hay texto cliente?",
+            "node": "Es imagen?",
             "type": "main",
             "index": 0
           }
@@ -946,6 +1216,130 @@
         [
           {
             "node": "Label irrelevante",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es imagen?": {
+      "main": [
+        [
+          {
+            "node": "Evolution media",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hay texto cliente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evolution media": {
+      "main": [
+        [
+          {
+            "node": "Preparar media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar media": {
+      "main": [
+        [
+          {
+            "node": "Hay media?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay media?": {
+      "main": [
+        [
+          {
+            "node": "Convertir imagen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convertir imagen": {
+      "main": [
+        [
+          {
+            "node": "Analizar imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizar imagen": {
+      "main": [
+        [
+          {
+            "node": "Parsear análisis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback imagen": {
+      "main": [
+        [
+          {
+            "node": "Parsear análisis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Vision": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analizar imagen",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear análisis": {
+      "main": [
+        [
+          {
+            "node": "Guardar análisis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar análisis": {
+      "main": [
+        [
+          {
+            "node": "Cargar contexto",
             "type": "main",
             "index": 0
           }

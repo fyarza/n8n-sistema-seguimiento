@@ -3,7 +3,7 @@
 -- Comercial: avisos 10:00 (t3 y day). Llegada: 16:00 y 20:00 (arrival_16, arrival_20).
 -- Correr este script en Postgres ANTES de activar los workflows de n8n.
 -- v2 añade leads de WhatsApp (Evolution). Es idempotente (IF NOT EXISTS).
--- Re-ejecutar actualiza el CHECK de kind (llegada) en bases ya desplegadas.
+-- Re-ejecutar actualiza el CHECK de kind (llegada) y añade media_analysis / media_signal.
 
 CREATE TABLE IF NOT EXISTS followup_reminders (
   id BIGSERIAL PRIMARY KEY,
@@ -93,10 +93,19 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   content_type TEXT NOT NULL DEFAULT 'text',
   relevant BOOLEAN,
   filter_label TEXT,
+  media_analysis TEXT,
+  media_signal TEXT,
   occurred_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (lead_id, evolution_message_id)
 );
+
+-- Postgres ya desplegado: CREATE IF NOT EXISTS no añade columnas nuevas.
+ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_analysis TEXT;
+ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_signal TEXT;
+ALTER TABLE whatsapp_messages DROP CONSTRAINT IF EXISTS whatsapp_messages_media_signal_check;
+ALTER TABLE whatsapp_messages ADD CONSTRAINT whatsapp_messages_media_signal_check
+  CHECK (media_signal IS NULL OR media_signal IN ('pago', 'reserva', 'consulta', 'ninguna'));
 
 CREATE INDEX IF NOT EXISTS idx_wa_messages_lead_time
   ON whatsapp_messages (lead_id, occurred_at DESC);
