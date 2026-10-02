@@ -10,10 +10,11 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 
 1. En Postgres, ejecuta `schema.sql` (si ya corriste v1/v2, vuelve a correrlo: tablas nuevas son `IF NOT EXISTS`; el ALTER actualiza `kind` para llegada y añade `media_analysis` / `media_signal`).
 2. Importa los cinco JSON (quedan inactivos).
-3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-v4-flash`) y **OpenAI (DeepSeek vision)** (misma key, Base URL `https://api.deepseek.com/v1`).
-4. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
-5. Activa 01, prueba un mensaje. Luego 02, 03, 04 y **05**.
-6. En el 01, tool `enviar_grafica`: elige el workflow 05 y refresca los inputs (`telegram_chat_id`, `tipo`, `periodo`, `estilo`). El 05 tiene que estar **publicado**.
+3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-flash`) y **OpenAI (DeepSeek vision)** (misma key, Base URL `https://api.deepseek.com/v1`).
+4. Speaches (transcripción de audios WhatsApp): servicio self-hosted con API OpenAI-compatible. En el nodo **Transcribir audio** del 03, pega la URL y `Bearer PEGAR_SPEACHES_API_KEY`. Modelo: `Systran/faster-whisper-small`, `language=es`.
+5. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
+6. Activa 01, prueba un mensaje. Luego 02, 03, 04 y **05**.
+7. En el 01, tool `enviar_grafica`: elige el workflow 05 y refresca los inputs (`telegram_chat_id`, `tipo`, `periodo`, `estilo`). El 05 tiene que estar **publicado**.
 
 ## Archivos
 
@@ -22,7 +23,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 | `schema.sql` | Avisos, memoria, **leads WhatsApp** | — |
 | `01-telegram-asistente-seguimientos.json` | Chat + tools (seguimientos y embudo) | Sí |
 | `02-cron-recordatorios.json` | Avisos 10:00 / 16:00 / 20:00 Caracas | No |
-| `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores + visión de imágenes | Sí (filtro + etapa + `deepseek-flash`) |
+| `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores + visión + **audios (Speaches)** | Sí (filtro + etapa + `deepseek-flash`) |
 | `04-cron-silencio-leads.json` | Silencio >24 h tras cotización | No |
 | `05-telegram-grafica-reportes.json` | SQL → QuickChart → foto Telegram | No |
 
@@ -32,9 +33,11 @@ Zona horaria: `America/Caracas`.
 
 ## Flujo 03 — qué hace
 
-Guarda los dos lados del chat. Clasifica **texto del cliente** relevante (fechas, precios, habitación, reserva) y **imágenes del cliente** con DeepSeek vision (`deepseek-flash`). Un comprobante (`media_signal=pago`) fuerza `concreto`. Cotización de la asesora (`OPCIONES DISPONIBLES`, formulario) marca `quoted_at`. No envía WhatsApp.
+Guarda los dos lados del chat. Clasifica **texto del cliente** relevante (fechas, precios, habitación, reserva), **imágenes del cliente** con DeepSeek vision (`deepseek-flash`) y **audios del cliente** con Speaches (`[Audio] …`). Un comprobante (`media_signal=pago`) fuerza `concreto`. Cotización de la asesora (`OPCIONES DISPONIBLES`, formulario) marca `quoted_at`. No envía WhatsApp.
 
 Para visión: crea una credencial **OpenAI** (no el nodo nativo DeepSeek) con la misma API key y Base URL `https://api.deepseek.com/v1`. El webhook de Evolution debe traer `server_url`, `instance` y `apikey` (el 03 los usa para `getBase64FromMediaMessage`). Si la media expiró, guarda `[Imagen no disponible]` y no rompe el flujo.
+
+Para audio: Evolution baja el `ogg`, **Transcribir audio** llama a Speaches (`/v1/audio/transcriptions`) y **Guardar texto audio** deja el body como `[Audio] texto`. Si falla, queda `[Audio enviado]` y el flujo sigue.
 
 ## Flujo 04 — silencio
 

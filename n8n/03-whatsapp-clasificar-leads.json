@@ -8,8 +8,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-v4-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. En Evolution, webhook POST a este path: `seguimientos-leads`.\n4. Guarda los dos lados (`fromMe` incluido). Clasifica texto relevante y **imágenes del cliente**.\n5. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n6. Imagen con señal `pago` (comprobante) fuerza `concreto`. Media expirada no rompe el flujo.",
-        "height": 440,
+        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. Speaches (STT self-hosted): Base URL pública + `Authorization: Bearer PEGAR_SPEACHES_API_KEY`,\n   modelo `Systran/faster-whisper-small`, `language=es`.\n4. En Evolution, webhook POST a este path: `seguimientos-leads`.\n5. Guarda los dos lados (`fromMe` incluido). Clasifica texto, **audios** y **imágenes** del cliente.\n6. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n7. Imagen con señal `pago` (comprobante) fuerza `concreto`. Media/audio fallido no rompe el flujo.",
+        "height": 500,
         "width": 480,
         "color": 7
       },
@@ -275,18 +275,22 @@
       "position": [
         2200,
         80
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500
     },
     {
       "parameters": {
         "model": {
           "__rl": true,
           "mode": "list",
-          "value": "deepseek-v4-flash"
+          "value": "deepseek-flash"
         },
         "options": {
           "temperature": 0.1,
-          "maxTokens": 1024
+          "maxTokens": 2024,
+          "timeout": 20000
         }
       },
       "id": "ds-clf",
@@ -457,11 +461,11 @@
         "model": {
           "__rl": true,
           "mode": "list",
-          "value": "deepseek-v4-flash"
+          "value": "deepseek-flash"
         },
         "options": {
           "temperature": 0.1,
-          "maxTokens": 1024
+          "maxTokens": 3024
         }
       },
       "id": "ds-cls",
@@ -935,6 +939,239 @@
         1760,
         680
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-audio",
+              "leftValue": "={{ $('Preparar update').first().json.content_type }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-audio",
+      "name": "Es audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($('Normalizar').first().json.evo_server_url || $('Webhook Evolution').first().json.body.server_url).toString().replace(/\\/$/, '') }}/chat/getBase64FromMediaMessage/{{ encodeURIComponent($('Normalizar').first().json.evo_instance || $('Webhook Evolution').first().json.body.instance || '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $('Normalizar').first().json.evo_apikey || $('Webhook Evolution').first().json.body.apikey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: { key: { id: $('Normalizar').first().json.message_id } }, convertToMp4: false }) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "contentType": "json"
+      },
+      "id": "evo-audio",
+      "name": "Evolution audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        -240
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst nested = raw.data && typeof raw.data === 'object' ? raw.data : {};\nlet base64 = String(raw.base64 || raw.base64Data || nested.base64 || '');\nbase64 = base64.replace(/^data:[a-zA-Z0-9.+-]+\\/[a-zA-Z0-9.+-]+;base64,/, '');\nconst mimetype = String(raw.mimetype || raw.mimeType || nested.mimetype || 'audio/ogg');\nconst err = raw.error || raw.message || '';\nif (!base64 || base64.length < 32) {\n  return [{ json: { media_ok: false, mimetype, error: String(err || 'sin base64') } }];\n}\nreturn [{ json: { media_ok: true, base64, mimetype } }];\n"
+      },
+      "id": "prep-audio",
+      "name": "Preparar audio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-audio",
+              "leftValue": "={{ Boolean($json.media_ok) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-audio",
+      "name": "Hay audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2420,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base64",
+        "options": {
+          "mimeType": "={{ $json.mimetype }}"
+        }
+      },
+      "id": "conv-audio",
+      "name": "Convertir audio",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        2640,
+        -280
+      ],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://test-speaches.i3clpy.easypanel.host/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer PEGAR_SPEACHES_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "Systran/faster-whisper-small"
+            },
+            {
+              "name": "language",
+              "value": "es"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "stt-audio",
+      "name": "Transcribir audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        -280
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst text = String(raw.text || '').replace(/\\s+/g, ' ').trim();\nconst body = text ? `[Audio] ${text}` : '[Audio enviado]';\nreturn [{\n  json: {\n    message_id: prep.message_id,\n    body,\n  },\n}];\n"
+      },
+      "id": "texto-audio",
+      "name": "Texto audio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE whatsapp_messages\nSET body = $2\nWHERE id = $1\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.message_id, $json.body] }}"
+        }
+      },
+      "id": "save-audio",
+      "name": "Guardar texto audio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3300,
+        -280
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Audio cliente → Speaches (Whisper)\nSolo `from_me=false` y `content_type=audio`.\nEvolution `getBase64FromMediaMessage` + Convert to File.\nPOST `/v1/audio/transcriptions` con `Systran/faster-whisper-small`, `language=es`.\nBearer `PEGAR_SPEACHES_API_KEY`. Body queda `[Audio] …` y sigue al filtro.\nSi falla la media/STT, cae a `[Audio enviado]` / `Hay texto cliente?`.",
+        "height": 280,
+        "width": 520,
+        "color": 4
+      },
+      "id": "note-audio",
+      "name": "Nota audio",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        -620
+      ]
     }
   ],
   "connections": {
@@ -1233,7 +1470,7 @@
         ],
         [
           {
-            "node": "Hay texto cliente?",
+            "node": "Es audio?",
             "type": "main",
             "index": 0
           }
@@ -1336,6 +1573,108 @@
       ]
     },
     "Guardar análisis": {
+      "main": [
+        [
+          {
+            "node": "Cargar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es audio?": {
+      "main": [
+        [
+          {
+            "node": "Evolution audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hay texto cliente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evolution audio": {
+      "main": [
+        [
+          {
+            "node": "Preparar audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar audio": {
+      "main": [
+        [
+          {
+            "node": "Hay audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay audio?": {
+      "main": [
+        [
+          {
+            "node": "Convertir audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hay texto cliente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convertir audio": {
+      "main": [
+        [
+          {
+            "node": "Transcribir audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribir audio": {
+      "main": [
+        [
+          {
+            "node": "Texto audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Texto audio": {
+      "main": [
+        [
+          {
+            "node": "Guardar texto audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar texto audio": {
       "main": [
         [
           {
