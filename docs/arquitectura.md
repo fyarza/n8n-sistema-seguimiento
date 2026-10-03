@@ -64,7 +64,7 @@ Reglas fijas encima del LLM: señales de pago/reserva fuerzan `concreto`; un `co
 
 ### Camino del 03
 
-Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta mensaje (idempotente) → si es la asesora, solo guarda (detecta cotización) → si es **imagen del cliente**, Evolution baja el binario y DeepSeek vision (`deepseek-flash`) extrae `media_signal` → si es **audio del cliente**, Evolution baja el `ogg` y Speaches (Whisper self-hosted) deja el body como `[Audio] …` → historial 20 msgs → filtro de relevancia → si `relevante`, DeepSeek etapa + reglas → `lead_score_events`. Señal `pago` (comprobante) fuerza `concreto`. Texto sigue el mismo camino.
+Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta mensaje (idempotente) → si es la asesora: guarda (detecta cotización); si manda **PDF certificado**, Docling lee la 1ª hoja y guarda un **resumen** (huésped, fechas, habitación, monto) + fuerza `concreto` → si es **imagen del cliente**, Evolution baja el binario y DeepSeek vision (`deepseek-flash`) extrae `media_signal` → si es **audio del cliente**, Evolution baja el `ogg` y Speaches (Whisper self-hosted) deja el body como `[Audio] …` → historial 20 msgs → filtro de relevancia → si `relevante`, DeepSeek etapa + reglas → `lead_score_events`. Señal `pago` (comprobante) o certificado leído fuerza `concreto`. Texto sigue el mismo camino.
 
 ## Datos
 

@@ -8,8 +8,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. Speaches (STT self-hosted): Base URL pública + `Authorization: Bearer PEGAR_SPEACHES_API_KEY`,\n   modelo `Systran/faster-whisper-small`, `language=es`.\n4. En Evolution, webhook POST a este path: `seguimientos-leads`.\n5. Guarda los dos lados (`fromMe` incluido). Clasifica texto, **audios** y **imágenes** del cliente.\n6. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n7. Imagen con señal `pago` (comprobante) fuerza `concreto`. Media/audio fallido no rompe el flujo.",
-        "height": 500,
+        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. Speaches audio: `https://test-speaches.i3clpy.easypanel.host` + Bearer `PEGAR_SPEACHES_API_KEY`.\n4. Docling certificados: `https://test-docling.i3clpy.easypanel.host` + `X-Api-Key: PEGAR_DOCLING_API_KEY`.\n5. Webhook Evolution path: `seguimientos-leads`.\n6. Guarda ambos lados. Clasifica texto, audios e imágenes del cliente; lee PDF certificado de la asesora.\n7. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n8. `pago` (imagen) o certificado Docling → `concreto`. Fallos de media no tumban el flujo.\n\nParams LLM (prod): Filtro maxTokens=2024 timeout=20s; Clasificar=3024; Vision=3048.",
+        "height": 580,
         "width": 480,
         "color": 7
       },
@@ -40,7 +40,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function unwrapMessage(msg) {\n  if (!msg || typeof msg !== 'object') return {};\n  const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage'];\n  for (const w of wrappers) {\n    if (msg[w] && msg[w].message) return unwrapMessage(msg[w].message);\n  }\n  return msg;\n}\n\nconst root = $input.first().json || {};\nconst payload = root.body && root.body.data ? root.body : root;\nconst event = String(payload.event || '');\nif (event && event !== 'messages.upsert') {\n  return [];\n}\nconst data = payload.data || {};\nconst key = data.key || {};\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid.includes('status@broadcast') || remoteJid.endsWith('@broadcast')) {\n  return [];\n}\nconst alt = String(key.remoteJidAlt || '');\nconst jidForPhone = alt.includes('@s.whatsapp.net') ? alt : remoteJid;\nconst phone = jidForPhone.replace(/[^0-9]/g, '');\nif (!phone) {\n  return [];\n}\n\nconst msg = unwrapMessage(data.message || {});\nconst declared = String(data.messageType || '');\nconst mimeOf = (obj) => String((obj && obj.mimetype) || '');\n\nlet contentType = 'unknown';\nif (msg.extendedTextMessage || msg.conversation || declared === 'conversation' || declared === 'extendedTextMessage') {\n  contentType = 'text';\n}\nif (msg.imageMessage || declared === 'imageMessage' || mimeOf(msg.documentMessage).startsWith('image/')) {\n  contentType = 'image';\n}\nif (msg.videoMessage || msg.ptvMessage || declared === 'videoMessage' || declared === 'ptvMessage') {\n  contentType = 'video';\n}\nif (msg.audioMessage || declared === 'audioMessage') {\n  contentType = 'audio';\n}\nif (msg.stickerMessage || declared === 'stickerMessage') {\n  contentType = 'sticker';\n}\nif ((msg.documentMessage || declared === 'documentMessage') && contentType === 'unknown') {\n  contentType = 'document';\n}\n\nconst caption = [\n  (msg.extendedTextMessage && msg.extendedTextMessage.text) || '',\n  msg.conversation || '',\n  (msg.imageMessage && msg.imageMessage.caption) || '',\n  (msg.videoMessage && msg.videoMessage.caption) || '',\n  (msg.documentMessage && (msg.documentMessage.caption || msg.documentMessage.fileName)) || '',\n].join('').trim();\n\nconst labels = {\n  image: '[Imagen enviada]',\n  video: '[Video enviado]',\n  audio: '[Audio enviado]',\n  sticker: '[Sticker enviado]',\n  document: '[Documento enviado]',\n};\nlet content = caption;\nif (labels[contentType]) {\n  content = caption ? `${labels[contentType]} ${caption}` : labels[contentType];\n}\n\nconst ts = data.messageTimestamp;\nlet occurredAt;\nif (typeof ts === 'number') {\n  occurredAt = DateTime.fromSeconds(ts).toISO();\n} else if (ts && typeof ts.low === 'number') {\n  occurredAt = DateTime.fromSeconds(ts.low).toISO();\n} else {\n  occurredAt = DateTime.now().setZone('America/Caracas').toISO();\n}\n\nreturn [{\n  json: {\n    whatsapp_jid: remoteJid,\n    phone,\n    display_name: String(data.pushName || ''),\n    from_me: Boolean(key.fromMe),\n    message_id: String(key.id || `${remoteJid}-${occurredAt}`),\n    content_type: contentType,\n    body: content,\n    occurred_at: occurredAt,\n    evo_server_url: String(payload.server_url || (root.body && root.body.server_url) || '').replace(/\\/$/, ''),\n    evo_instance: String(payload.instance || (root.body && root.body.instance) || ''),\n    evo_apikey: String(payload.apikey || (root.body && root.body.apikey) || ''),\n  },\n}];\n"
+        "jsCode": "function unwrapMessage(msg) {\n  if (!msg || typeof msg !== 'object') return {};\n  const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage'];\n  for (const w of wrappers) {\n    if (msg[w] && msg[w].message) return unwrapMessage(msg[w].message);\n  }\n  return msg;\n}\n\nconst root = $input.first().json || {};\nconst payload = root.body && root.body.data ? root.body : root;\nconst event = String(payload.event || '');\nif (event && event !== 'messages.upsert') {\n  return [];\n}\nconst data = payload.data || {};\nconst key = data.key || {};\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid.includes('status@broadcast') || remoteJid.endsWith('@broadcast')) {\n  return [];\n}\nconst alt = String(key.remoteJidAlt || '');\nconst jidForPhone = alt.includes('@s.whatsapp.net') ? alt : remoteJid;\nconst phone = jidForPhone.replace(/[^0-9]/g, '');\nif (!phone) {\n  return [];\n}\n\nconst msg = unwrapMessage(data.message || {});\nconst declared = String(data.messageType || '');\nconst mimeOf = (obj) => String((obj && obj.mimetype) || '');\n\nlet contentType = 'unknown';\nif (msg.extendedTextMessage || msg.conversation || declared === 'conversation' || declared === 'extendedTextMessage') {\n  contentType = 'text';\n}\nif (msg.imageMessage || declared === 'imageMessage' || mimeOf(msg.documentMessage).startsWith('image/')) {\n  contentType = 'image';\n}\nif (msg.videoMessage || msg.ptvMessage || declared === 'videoMessage' || declared === 'ptvMessage') {\n  contentType = 'video';\n}\nif (msg.audioMessage || declared === 'audioMessage') {\n  contentType = 'audio';\n}\nif (msg.stickerMessage || declared === 'stickerMessage') {\n  contentType = 'sticker';\n}\nif ((msg.documentMessage || declared === 'documentMessage') && contentType === 'unknown') {\n  contentType = 'document';\n}\n\nconst caption = [\n  (msg.extendedTextMessage && msg.extendedTextMessage.text) || '',\n  msg.conversation || '',\n  (msg.imageMessage && msg.imageMessage.caption) || '',\n  (msg.videoMessage && msg.videoMessage.caption) || '',\n  (msg.documentMessage && (msg.documentMessage.caption || msg.documentMessage.fileName)) || '',\n].join('').trim();\n\nconst labels = {\n  image: '[Imagen enviada]',\n  video: '[Video enviado]',\n  audio: '[Audio enviado]',\n  sticker: '[Sticker enviado]',\n  document: '[Documento enviado]',\n};\nlet content = caption;\nif (labels[contentType]) {\n  content = caption ? `${labels[contentType]} ${caption}` : labels[contentType];\n}\n\nconst ts = data.messageTimestamp;\nlet occurredAt;\nif (typeof ts === 'number') {\n  occurredAt = DateTime.fromSeconds(ts).toISO();\n} else if (ts && typeof ts.low === 'number') {\n  occurredAt = DateTime.fromSeconds(ts.low).toISO();\n} else {\n  occurredAt = DateTime.now().setZone('America/Caracas').toISO();\n}\n\nreturn [{\n  json: {\n    whatsapp_jid: remoteJid,\n    phone,\n    display_name: String(data.pushName || ''),\n    from_me: Boolean(key.fromMe),\n    message_id: String(key.id || `${remoteJid}-${occurredAt}`),\n    content_type: contentType,\n    body: content,\n    occurred_at: occurredAt,\n    evo_server_url: String(payload.server_url || '').replace(/\\/$/, ''),\n    evo_instance: String(payload.instance || ''),\n    evo_apikey: String(payload.apikey || ''),\n  },\n}];\n"
       },
       "id": "norm",
       "name": "Normalizar",
@@ -282,14 +282,10 @@
     },
     {
       "parameters": {
-        "model": {
-          "__rl": true,
-          "mode": "list",
-          "value": "deepseek-flash"
-        },
+        "model": "deepseek-flash",
         "options": {
-          "temperature": 0.1,
           "maxTokens": 2024,
+          "temperature": 0.1,
           "timeout": 20000
         }
       },
@@ -458,14 +454,10 @@
     },
     {
       "parameters": {
-        "model": {
-          "__rl": true,
-          "mode": "list",
-          "value": "deepseek-flash"
-        },
+        "model": "deepseek-flash",
         "options": {
-          "temperature": 0.1,
-          "maxTokens": 3024
+          "maxTokens": 3024,
+          "temperature": 0.1
         }
       },
       "id": "ds-cls",
@@ -838,9 +830,9 @@
           "value": "deepseek-flash"
         },
         "options": {
-          "temperature": 0,
-          "maxTokens": 2048,
-          "responseFormat": "json_object"
+          "maxTokens": 3048,
+          "responseFormat": "json_object",
+          "temperature": 0
         }
       },
       "id": "ds-vision",
@@ -947,11 +939,11 @@
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "strict",
-            "version": 2
+            "version": 3
           },
           "conditions": [
             {
-              "id": "is-audio",
+              "id": "0f0e3e3c-37be-49c8-89c4-9ebfba556a5a",
               "leftValue": "={{ $('Preparar update').first().json.content_type }}",
               "rightValue": "audio",
               "operator": {
@@ -965,9 +957,9 @@
         "options": {}
       },
       "id": "if-audio",
-      "name": "Es audio?",
+      "name": "Es audio",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
+      "typeVersion": 2.3,
       "position": [
         1760,
         -200
@@ -1111,7 +1103,7 @@
       "id": "stt-audio",
       "name": "Transcribir audio",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.5,
       "position": [
         2860,
         -280
@@ -1172,6 +1164,426 @@
         1980,
         -620
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-cert",
+              "leftValue": "={{ (function () { const prep = $('Preparar update').first().json || {}; const type = String(prep.content_type || '').toLowerCase(); const body = String(prep.body || ''); return (type === 'document' || body.startsWith('[Documento')) && /certificado/i.test(body); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-cert",
+      "name": "Es certificado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($('Normalizar').first().json.evo_server_url || $('Webhook Evolution').first().json.body.server_url).toString().replace(/\\/$/, '') }}/chat/getBase64FromMediaMessage/{{ encodeURIComponent($('Normalizar').first().json.evo_instance || $('Webhook Evolution').first().json.body.instance || '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $('Normalizar').first().json.evo_apikey || $('Webhook Evolution').first().json.body.apikey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: { key: { id: $('Normalizar').first().json.message_id } }, convertToMp4: false }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "contentType": "json"
+      },
+      "id": "evo-cert",
+      "name": "Evolution certificado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        -280
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst nested = raw.data && typeof raw.data === 'object' ? raw.data : {};\nlet base64 = String(raw.base64 || raw.base64Data || nested.base64 || '');\nbase64 = base64.replace(/^data:[a-zA-Z0-9.+-]+\\/[a-zA-Z0-9.+-]+;base64,/, '');\nconst mimetype = String(raw.mimetype || raw.mimeType || nested.mimetype || 'application/pdf');\nconst err = raw.error || raw.message || '';\nif (!base64 || base64.length < 32) {\n  return [{ json: { media_ok: false, mimetype, error: String(err || 'sin base64') } }];\n}\nreturn [{ json: { media_ok: true, base64, mimetype } }];\n"
+      },
+      "id": "prep-cert",
+      "name": "Preparar certificado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-cert-file",
+              "leftValue": "={{ Boolean($json.media_ok) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-cert-file",
+      "name": "Hay archivo cert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base64",
+        "options": {
+          "mimeType": "={{ $json.mimetype || 'application/pdf' }}",
+          "fileName": "certificado.pdf"
+        }
+      },
+      "id": "conv-cert",
+      "name": "Convertir certificado",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        2420,
+        -360
+      ],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://test-docling.i3clpy.easypanel.host/v1/convert/file",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "PEGAR_DOCLING_API_KEY"
+            },
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "to_formats",
+              "value": "md"
+            },
+            {
+              "name": "to_formats",
+              "value": "text"
+            },
+            {
+              "name": "do_ocr",
+              "value": "true"
+            },
+            {
+              "name": "from_formats",
+              "value": "pdf"
+            },
+            {
+              "name": "page_range",
+              "value": "1"
+            },
+            {
+              "name": "page_range",
+              "value": "1"
+            },
+            {
+              "name": "table_mode",
+              "value": "fast"
+            },
+            {
+              "name": "include_images",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "docling-cert",
+      "name": "Docling certificado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        -360
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst norm = $('Normalizar').first().json || {};\nconst doc = raw.document || {};\nlet text = String(doc.text_content || doc.md_content || '').replace(/\\s+/g, ' ').trim();\nconst md = String(doc.md_content || '').trim();\nconst ok = Boolean(text) && String(raw.status || '').toLowerCase() !== 'failure';\n\n// Primera hoja: cortar políticas / página 2\nconst cutRe = /\\b(NOTA\\s*:|IMPORTANTE\\s*:|NUESTRA\\s+POL[IÍ]TIC|POL[IÍ]TICAS\\s+anex|Favor presentar este documento|<!--\\s*page\\s*break|formfeed)/i;\nconst cutAt = text.search(cutRe);\nif (cutAt > 80) text = text.slice(0, cutAt).trim();\nlet mdFirst = md;\nconst mdCut = mdFirst.search(cutRe);\nif (mdCut > 80) mdFirst = mdFirst.slice(0, mdCut).trim();\nconst src = `${mdFirst}\\n${text}`;\n\nconst pick = (re) => {\n  const m = src.match(re);\n  return m ? String(m[1] || m[2] || '').replace(/\\s+/g, ' ').trim() : '';\n};\nconst looksLikeRoom = (s) => /matrimonial|individual|suite|est[aá]ndar|doble|triple|\\d+\\s/i.test(s)\n  && !/debe pagar|acuerdo al caso|pol[ií]tica/i.test(s);\n\nlet huesped = pick(/Ciudadano\\(a\\):\\s*([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜa-záéíóúñü\\s.'-]{2,80}?)(?=\\s+[VEP]-|\\s+PAS-|\\s+Presente|\\s+RIF:|$)/i)\n  || pick(/hu[eé]sped(?:es)?\\s*[:\\-]\\s*([^\\n|]+)/i);\nhuesped = huesped.replace(/\\s+/g, ' ').trim();\n\nconst cedula = pick(/\\b([VE]-?\\d{1,2}\\.?\\d{3}\\.?\\d{3})\\b/i)\n  || pick(/\\b(PAS-[A-Z0-9\\-]+)\\b/i);\n\nconst checkin = pick(/Check\\s*In\\s*:[^F]{0,40}Fecha\\s*:\\s*([0-9]{1,2}[\\/\\-.][0-9]{1,2}[\\/\\-.][0-9]{2,4})/i)\n  || pick(/check[\\s\\-]?in\\s*[:\\-]\\s*([0-9]{1,2}[\\/\\-.][0-9]{1,2}[\\/\\-.][0-9]{2,4})/i);\n\nconst checkout = pick(/Check\\s*Out\\s*:[^F]{0,40}Fecha\\s*:\\s*([0-9]{1,2}[\\/\\-.][0-9]{1,2}[\\/\\-.][0-9]{2,4})/i)\n  || pick(/check[\\s\\-]?out\\s*[:\\-]\\s*([0-9]{1,2}[\\/\\-.][0-9]{1,2}[\\/\\-.][0-9]{2,4})/i);\n\nlet habitacion = pick(/Tipo\\(s\\)\\s+de\\s+Habitaci[oó]n(?:\\(es\\)|es)?\\s*:\\s*([^\\-|]+?)(?=\\s*-\\s*Destino|\\s*Monto|\\s*Plan|\\s*$)/i)\n  || pick(/Habitaci[oó]n(?:es)?\\s*:\\s*([A-Z0-9ÁÉÍÓÚÑÜ][A-Z0-9ÁÉÍÓÚÑÜa-záéíóúñü\\s.]{2,60})/i);\nif (habitacion && !looksLikeRoom(habitacion)) habitacion = '';\n\nconst plan = pick(/Plan\\s*:\\s*([^-|]+?)(?=\\s*-\\s*PAX|\\s*-\\s*Duraci|\\s*$)/i);\nconst pax = pick(/PAX\\.?\\s*(\\d+)/i);\nconst noches = pick(/Duraci[oó]n\\s*:\\s*([^-\\n|]+?)(?=\\s*-\\s*Check|\\s*$)/i);\nconst monto = pick(/Monto Total(?: de Hospedaje)?\\s*:\\s*(€?\\s*[\\d.,]+)/i);\nconst pendiente = pick(/Monto Pendiente(?: a Pagar)?\\s*:\\s*(€?\\s*[\\d.,]+)/i);\nconst formaPago = pick(/\\|?\\s*(TARJETA\\s+INTERNACIONAL|PAGO\\s+M[OÓ]VIL|TRANSFERENCIA|ZELLE|EFECTIVO|DEP[OÓ]SITO)[^|]{0,40}/i)\n  || pick(/Forma de pago[^A-Z]{0,20}([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ\\s]{3,40})/i);\nconst cuentaPago = pick(/\\b(EN EL HOTEL)\\b/i);\nconst destino = pick(/Destino\\s*:\\s*([^-|]+?)(?=\\s*Monto|\\s*$)/i);\nconst asesora = pick(/\\b(EVELIN\\s+YARZA|DARWIN\\s+BRET|[A-ZÁÉÍÓÚÑÜ]{3,}\\s+[A-ZÁÉÍÓÚÑÜ]{3,})\\s+EJECUTIVA/i)\n  || pick(/EJECUTIVA DE VENTAS[^A-Z]{0,5}([A-ZÁÉÍÓÚÑÜ\\s]{5,40})/i);\nconst telAsesora = pick(/\\b(04\\d{2}\\s?\\d{3}\\s?\\d{4})\\b/);\nconst emitido = pick(/Tucacas,?\\s*([0-9]{1,2}\\s+de\\s+[A-Za-zÁÉÍÓÚáéíóú]+\\s+de\\s+[0-9]{4})/i);\nconst caption = String(norm.body || '').replace(/^\\[Documento enviado\\]\\s*/i, '').trim();\n\nconst fields = {\n  huesped: huesped || null,\n  cedula: cedula || null,\n  checkin: checkin || null,\n  checkout: checkout || null,\n  noches: noches || null,\n  habitacion: habitacion || null,\n  plan: plan || null,\n  pax: pax || null,\n  monto: monto || null,\n  pendiente: pendiente || null,\n  forma_pago: [formaPago, cuentaPago].filter(Boolean).join(' ').trim() || null,\n  destino: destino || null,\n  asesora: (asesora || '').replace(/\\s+EJECUTIVA.*/i, '').trim() || null,\n  tel_asesora: telAsesora || null,\n  emitido: emitido || null,\n  archivo: caption || null,\n};\n\nconst bits = [];\nif (fields.huesped) bits.push(`Huésped: ${fields.huesped}`);\nif (fields.cedula) bits.push(`Cédula: ${fields.cedula}`);\nif (fields.checkin) bits.push(`Check-in: ${fields.checkin}`);\nif (fields.checkout) bits.push(`Check-out: ${fields.checkout}`);\nif (fields.noches) bits.push(`Estancia: ${fields.noches}`);\nif (fields.habitacion) bits.push(`Habitación: ${fields.habitacion}`);\nif (fields.plan) bits.push(`Plan: ${fields.plan}`);\nif (fields.pax) bits.push(`PAX: ${fields.pax}`);\nif (fields.monto) bits.push(`Monto: ${fields.monto}`);\nif (fields.pendiente) bits.push(`Pendiente: ${fields.pendiente}`);\nif (fields.forma_pago) bits.push(`Pago: ${fields.forma_pago}`);\nif (fields.destino) bits.push(`Destino: ${fields.destino}`);\nif (fields.asesora) bits.push(`Asesora: ${fields.asesora}`);\nif (fields.tel_asesora) bits.push(`Tel: ${fields.tel_asesora}`);\nif (fields.emitido) bits.push(`Emitido: ${fields.emitido}`);\n\nconst analysis = ok\n  ? JSON.stringify({ tipo: 'certificado_reserva', resumen_primera_hoja: true, ...fields })\n  : null;\n\nconst body = ok\n  ? (bits.length\n      ? `[Certificado] ${bits.join(' | ')}`\n      : `[Certificado] ${text.slice(0, 500)}`)\n  : (caption ? `[Documento no leido] ${caption}` : '[Documento no leido]');\n\nreturn [{\n  json: {\n    message_id: prep.message_id,\n    lead_id: prep.lead_id,\n    ok,\n    media_analysis: analysis,\n    media_signal: ok ? 'reserva' : 'ninguna',\n    body,\n    huesped: fields.huesped || '',\n    checkin: fields.checkin || '',\n    checkout: fields.checkout || '',\n  },\n}];\n"
+      },
+      "id": "parse-cert",
+      "name": "Parsear certificado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fb-ok",
+              "name": "ok",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "fb-body",
+              "name": "body",
+              "value": "={{ String(($('Preparar update').first().json || {}).body || '[Documento no leido]') }}",
+              "type": "string"
+            },
+            {
+              "id": "fb-mid",
+              "name": "message_id",
+              "value": "={{ $('Preparar update').first().json.message_id }}",
+              "type": "number"
+            },
+            {
+              "id": "fb-lid",
+              "name": "lead_id",
+              "value": "={{ $('Preparar update').first().json.lead_id }}",
+              "type": "number"
+            },
+            {
+              "id": "fb-ma",
+              "name": "media_analysis",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "fb-ms",
+              "name": "media_signal",
+              "value": "ninguna",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fallback-cert",
+      "name": "Fallback certificado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2420,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE whatsapp_messages\nSET body = $2,\n    media_analysis = $3,\n    media_signal = $4,\n    relevant = true,\n    filter_label = 'relevante'\nWHERE id = $1\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.message_id, $json.body, $json.media_analysis, $json.media_signal] }}"
+        }
+      },
+      "id": "save-cert",
+      "name": "Guardar certificado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3080,
+        -280
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cert-ok",
+              "leftValue": "={{ Boolean($('Parsear certificado').first().json.ok) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-cert-ok",
+      "name": "Certificado ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3300,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET\n  stage = 'concreto',\n  score_cierre = GREATEST(COALESCE(score_cierre, 0), 90),\n  score_potencial = LEAST(COALESCE(score_potencial, 0), 20),\n  last_reason = COALESCE(NULLIF(btrim($2::text), ''), last_reason, 'Certificado de reserva leido'),\n  updated_at = now()\nWHERE id = $1\nRETURNING id, stage, score_cierre, last_reason;",
+        "options": {
+          "queryReplacement": "={{ [$('Parsear certificado').first().json.lead_id, 'Certificado de reserva leido por Docling'] }}"
+        }
+      },
+      "id": "close-cert",
+      "name": "Cerrar por certificado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3520,
+        -360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lead_score_events (\n  lead_id, stage, score_potencial, score_engagement, score_cierre, score_silencio,\n  sentiment, reason, source\n)\nSELECT\n  l.id,\n  l.stage,\n  l.score_potencial,\n  l.score_engagement,\n  l.score_cierre,\n  l.score_silencio,\n  COALESCE(l.sentiment_last, 'positivo'),\n  'Certificado de reserva leido por Docling',\n  'rule'\nFROM leads l\nWHERE l.id = $1\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $('Parsear certificado').first().json.lead_id }}"
+        }
+      },
+      "id": "evt-cert",
+      "name": "Registrar cierre certificado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3740,
+        -360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Certificado asesora → Docling\nSolo `from_me=true`, `content_type=document` y body/archivo con `certificado`.\nEvolution → Docling `/v1/convert/file` con `page_range=1,1` (solo 1ª hoja).\nGuarda **resumen 1ª hoja** en `body` + `media_analysis` + `media_signal=reserva` → `concreto`.\nSin políticas. Si falla: `[Documento no leido]`.",
+        "height": 240,
+        "width": 480,
+        "color": 6
+      },
+      "id": "note-cert",
+      "name": "Nota certificado",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE whatsapp_messages\nSET body = $2\nWHERE id = $1\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.message_id, $json.body] }}"
+        }
+      },
+      "id": "save-cert-fail",
+      "name": "Guardar cert fallido",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3080,
+        -80
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
     }
   ],
   "connections": {
@@ -1245,7 +1657,7 @@
       "main": [
         [
           {
-            "node": "Solo guardar asesora",
+            "node": "Es certificado?",
             "type": "main",
             "index": 0
           }
@@ -1470,7 +1882,7 @@
         ],
         [
           {
-            "node": "Es audio?",
+            "node": "Es audio",
             "type": "main",
             "index": 0
           }
@@ -1583,7 +1995,7 @@
         ]
       ]
     },
-    "Es audio?": {
+    "Es audio": {
       "main": [
         [
           {
@@ -1679,6 +2091,142 @@
         [
           {
             "node": "Cargar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es certificado?": {
+      "main": [
+        [
+          {
+            "node": "Evolution certificado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Solo guardar asesora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evolution certificado": {
+      "main": [
+        [
+          {
+            "node": "Preparar certificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar certificado": {
+      "main": [
+        [
+          {
+            "node": "Hay archivo cert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay archivo cert?": {
+      "main": [
+        [
+          {
+            "node": "Convertir certificado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback certificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convertir certificado": {
+      "main": [
+        [
+          {
+            "node": "Docling certificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Docling certificado": {
+      "main": [
+        [
+          {
+            "node": "Parsear certificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback certificado": {
+      "main": [
+        [
+          {
+            "node": "Guardar cert fallido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear certificado": {
+      "main": [
+        [
+          {
+            "node": "Guardar certificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar certificado": {
+      "main": [
+        [
+          {
+            "node": "Certificado ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Certificado ok?": {
+      "main": [
+        [
+          {
+            "node": "Cerrar por certificado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Cerrar por certificado": {
+      "main": [
+        [
+          {
+            "node": "Registrar cierre certificado",
             "type": "main",
             "index": 0
           }

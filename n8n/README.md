@@ -23,7 +23,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 | `schema.sql` | Avisos, memoria, **leads WhatsApp** | — |
 | `01-telegram-asistente-seguimientos.json` | Chat + tools (seguimientos y embudo); **notas de voz** vía Speaches | Sí |
 | `02-cron-recordatorios.json` | Avisos 10:00 / 16:00 / 20:00 Caracas | No |
-| `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores + visión + **audios (Speaches)** | Sí (filtro + etapa + `deepseek-flash`) |
+| `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores + visión + audios + **certificados PDF (Docling)** | Sí (filtro + etapa + `deepseek-flash`) |
 | `04-cron-silencio-leads.json` | Silencio >24 h tras cotización | No |
 | `05-telegram-grafica-reportes.json` | SQL → QuickChart → foto Telegram | No |
 
@@ -42,6 +42,10 @@ Guarda los dos lados del chat. Clasifica **texto del cliente** relevante (fechas
 Para visión: crea una credencial **OpenAI** (no el nodo nativo DeepSeek) con la misma API key y Base URL `https://api.deepseek.com/v1`. El webhook de Evolution debe traer `server_url`, `instance` y `apikey` (el 03 los usa para `getBase64FromMediaMessage`). Si la media expiró, guarda `[Imagen no disponible]` y no rompe el flujo.
 
 Para audio: Evolution baja el `ogg`, **Transcribir audio** llama a Speaches (`/v1/audio/transcriptions`) y **Guardar texto audio** deja el body como `[Audio] texto`. Si falla, queda `[Audio enviado]` y el flujo sigue.
+
+Para certificados de la asesora: documento cuyo body/archivo contiene `certificado` → Evolution baja el PDF → [Docling Serve](https://github.com/docling-project/docling-serve) (`/v1/convert/file`, header `X-Api-Key`, **`page_range=1,1`** solo 1ª hoja) → guarda un **resumen** en `body` (huésped, cédula, check-in/out, habitación, plan, PAX, monto, pago) + `media_analysis` JSON + `media_signal=reserva` y stage `concreto`. Si Docling falla, guarda `[Documento no leido]` y no tumba el flujo.
+
+Params de prod embebidos en el JSON (no se pierden al reimportar): contexto `LIMIT 20`; Filtro `maxTokens=2024` + `timeout=20s` + retry 2×1.5s; Clasificar `maxTokens=3024`; Vision `maxTokens=3048` + `json_object`; Speaches URL EasyPanel + `PEGAR_SPEACHES_API_KEY`; Docling URL EasyPanel + `PEGAR_DOCLING_API_KEY`.
 
 ## Flujo 04 — silencio
 
