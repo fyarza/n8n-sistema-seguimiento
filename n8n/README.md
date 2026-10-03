@@ -35,6 +35,8 @@ Zona horaria: `America/Caracas`.
 
 Acepta texto o nota de voz (`voice` / `audio`). Si es voz: Telegram descarga el archivo → Speaches transcribe → el agente recibe `[Audio] …`. Misma URL/Bearer que el 03 (`PEGAR_SPEACHES_API_KEY`). DeepSeek Chat en prod: `maxTokens` 4904, temp `0.2`.
 
+Respuestas largas: tras el agente, DeepSeek intenta JSON `parte1`/`parte2`/`parte3` (≤3500; límite Telegram 4096). Si deja todo en una parte, `Parsear partes` corta en local. Los nodos Telegram usan `parse_mode=HTML` (n8n por defecto fuerza Markdown y rompe con `_`/`*` → *can't parse entities*).
+
 ## Flujo 03 — qué hace
 
 Guarda los dos lados del chat. Clasifica **texto del cliente** relevante (fechas, precios, habitación, reserva), **imágenes del cliente** con DeepSeek vision (`deepseek-flash`) y **audios del cliente** con Speaches (`[Audio] …`). Un comprobante (`media_signal=pago`) fuerza `concreto`. Cotización de la asesora (`OPCIONES DISPONIBLES`, formulario) marca `quoted_at`. No envía WhatsApp.

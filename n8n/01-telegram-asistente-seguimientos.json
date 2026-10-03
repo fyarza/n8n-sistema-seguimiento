@@ -504,30 +504,6 @@
     },
     {
       "parameters": {
-        "operation": "sendMessage",
-        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
-        "text": "={{ $json.output }}",
-        "additionalFields": {
-          "appendAttribution": false
-        }
-      },
-      "id": "send",
-      "name": "Responder Telegram",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        1320,
-        0
-      ],
-      "credentials": {
-        "telegramApi": {
-          "id": "PEGAR_CRED_TELEGRAM",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "operation": "executeQuery",
         "query": "SELECT COUNT(*)::int AS n\nFROM assistant_chat_messages\nWHERE session_id = $1;",
         "options": {
@@ -539,7 +515,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1540,
+        2960,
         0
       ],
       "alwaysOutputData": true,
@@ -897,7 +873,9 @@
         "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
         "text": "={{ 'No pude escuchar el audio. ' + String($json.error || 'Intenta de nuevo o escribe el mensaje en texto.') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
         }
       },
       "id": "tg-voice-fail",
@@ -915,6 +893,244 @@
         }
       },
       "webhookId": "tg-voice-fail"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=El agente respondió con este texto:\n\n{{ $json.output }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=Es necesario transformar la respuesta del agente en JSON para enviarla por Telegram (máx ~3500 caracteres por mensaje).\n\nReglas:\n- Conserva TODO el contenido; no resumas ni inventes.\n- Parte en cortes naturales (secciones, listas, bolsas del reporte).\n- Usa parte2/parte3 SOLO si hace falta; si no, string vacío \"\".\n- Cada parte ≤ 3500 caracteres.\n- Texto plano: sin markdown (** __ `), sin tablas markdown.\n- Responde SOLO JSON válido, sin explicación.\n\nFormato exacto:\n{\n  \"response\": {\n    \"parte1\": \"texto de la primera parte\",\n    \"parte2\": \"texto de la segunda parte o vacío\",\n    \"parte3\": \"texto de la tercera parte o vacío\"\n  }\n}"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "dividir-partes-llm",
+      "name": "Dividir en partes",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        1240,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "deepseek-flash"
+        },
+        "options": {
+          "maxTokens": 4904,
+          "temperature": 0
+        }
+      },
+      "id": "deepseek-dividir",
+      "name": "DeepSeek Dividir",
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        220
+      ],
+      "credentials": {
+        "deepSeekApi": {
+          "id": "PEGAR_CRED_DEEPSEEK",
+          "name": "DeepSeek account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const MAX = 3500; // Telegram max 4096; margen por entidades/UTF-8\nconst agentOut = String(($('Asistente seguimientos').first().json || {}).output || '').trim();\nconst parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') raw = JSON.stringify(raw);\nraw = String(raw).replace(/```json/gi, '').replace(/```/g, '').trim();\nlet data = {};\ntry {\n  data = JSON.parse(raw);\n} catch (e) {\n  const m = raw.match(/\\{[\\s\\S]*\\}/);\n  if (m) {\n    try { data = JSON.parse(m[0]); } catch (e2) { data = {}; }\n  }\n}\nconst resp = (data && data.response && typeof data.response === 'object') ? data.response : data;\nlet p1 = String((resp && resp.parte1) || '').trim();\nlet p2 = String((resp && resp.parte2) || '').trim();\nlet p3 = String((resp && resp.parte3) || '').trim();\n\nfunction splitLocal(s, max) {\n  const chunks = [];\n  let rest = String(s || '').trim();\n  while (rest.length > max && chunks.length < 3) {\n    let cut = rest.lastIndexOf('\\n\\n', max);\n    if (cut < Math.floor(max * 0.35)) cut = rest.lastIndexOf('\\n', max);\n    if (cut < Math.floor(max * 0.35)) cut = rest.lastIndexOf(' ', max);\n    if (cut < Math.floor(max * 0.35)) cut = max;\n    chunks.push(rest.slice(0, cut).trimEnd());\n    rest = rest.slice(cut).replace(/^\\s+/, '');\n  }\n  if (rest) {\n    if (chunks.length < 3) chunks.push(rest);\n    else chunks[2] = (chunks[2] + '\\n' + rest).slice(0, max);\n  }\n  while (chunks.length < 3) chunks.push('');\n  return chunks;\n}\n\n// n8n Telegram (v1.2) pone parse_mode=Markdown por defecto → fallan _, *, etc.\n// Enviamos HTML: escapar & < >\nfunction toHtmlSafe(s) {\n  return String(s || '')\n    .replace(/\\*\\*([^*]+)\\*\\*/g, '$1')\n    .replace(/__([^_]+)__/g, '$1')\n    .replace(/\\*([^*\\n]+)\\*/g, '$1')\n    .replace(/_([^_\\n]+)_/g, '$1')\n    .replace(/`([^`]+)`/g, '$1')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .trim();\n}\n\nconst source = agentOut || [p1, p2, p3].filter(Boolean).join('\\n\\n');\nconst llmOk = p1\n  && p1.length <= MAX\n  && p2.length <= MAX\n  && p3.length <= MAX\n  && (source.length <= MAX || p2 || p3);\n\nif (!llmOk) {\n  const parts = splitLocal(source || 'No pude generar respuesta.', MAX);\n  p1 = parts[0];\n  p2 = parts[1];\n  p3 = parts[2];\n}\n\np1 = toHtmlSafe(p1);\np2 = p2 ? toHtmlSafe(p2) : '';\np3 = p3 ? toHtmlSafe(p3) : '';\nif (!p1) p1 = toHtmlSafe(source) || 'No pude generar respuesta.';\n\nreturn [{\n  json: {\n    parte1: p1.slice(0, 4000),\n    parte2: p2 ? p2.slice(0, 4000) : '',\n    parte3: p3 ? p3.slice(0, 4000) : '',\n    chars: {\n      total: source.length,\n      p1: p1.length,\n      p2: p2.length,\n      p3: p3.length,\n      max_por_parte: MAX,\n      limite_telegram: 4096,\n    },\n  },\n}];\n"
+      },
+      "id": "parsear-partes",
+      "name": "Parsear partes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{ $('Parsear partes').first().json.parte1 }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "tg-parte-1",
+      "name": "Telegram parte 1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1760,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "if-parte-2-cond",
+              "leftValue": "={{ $('Parsear partes').first().json.parte2 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-parte-2",
+      "name": "Hay parte 2?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{ $('Parsear partes').first().json.parte2 }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "tg-parte-2",
+      "name": "Telegram parte 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2240,
+        -120
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "if-parte-3-cond",
+              "leftValue": "={{ $('Parsear partes').first().json.parte3 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-parte-3",
+      "name": "Hay parte 3?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{ $('Parsear partes').first().json.parte3 }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "tg-parte-3",
+      "name": "Telegram parte 3",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2720,
+        -120
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "fin-envio",
+      "name": "Fin envio",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2720,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Dividir mensajes (Telegram)\nLímite Telegram: **4096** chars/msg.\nPartimos a ≤**3500** (parte1/2/3).\n\nImportante: n8n Telegram pone\n`parse_mode=Markdown` por defecto →\nerror *can't parse entities* con `_`/`*`.\nAquí usamos **HTML** + escape.\nSi el LLM deja todo en parte1,\nParsear partes fuerza corte local.",
+        "height": 280,
+        "width": 360,
+        "color": 4
+      },
+      "id": "nota-dividir-msg",
+      "name": "Nota dividir mensajes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        -320
+      ]
     }
   ],
   "connections": {
@@ -1065,18 +1281,7 @@
       "main": [
         [
           {
-            "node": "Responder Telegram",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Responder Telegram": {
-      "main": [
-        [
-          {
-            "node": "Contar memoria",
+            "node": "Dividir en partes",
             "type": "main",
             "index": 0
           }
@@ -1278,6 +1483,119 @@
         [
           {
             "node": "Aviso voz fallida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Dividir": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Dividir en partes",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dividir en partes": {
+      "main": [
+        [
+          {
+            "node": "Parsear partes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear partes": {
+      "main": [
+        [
+          {
+            "node": "Telegram parte 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram parte 1": {
+      "main": [
+        [
+          {
+            "node": "Hay parte 2?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay parte 2?": {
+      "main": [
+        [
+          {
+            "node": "Telegram parte 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hay parte 3?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram parte 2": {
+      "main": [
+        [
+          {
+            "node": "Hay parte 3?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay parte 3?": {
+      "main": [
+        [
+          {
+            "node": "Telegram parte 3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram parte 3": {
+      "main": [
+        [
+          {
+            "node": "Contar memoria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fin envio": {
+      "main": [
+        [
+          {
+            "node": "Contar memoria",
             "type": "main",
             "index": 0
           }
