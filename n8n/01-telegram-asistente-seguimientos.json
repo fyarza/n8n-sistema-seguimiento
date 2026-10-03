@@ -8,8 +8,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Setup v2\n1. Corre `n8n/schema.sql` en Postgres (incluye leads WhatsApp).\n2. Mapea credenciales: Telegram, Postgres, DeepSeek.\n3. `allowedChatIds` en Config: vacío = todos; o `123,456` para allowlist.\n4. n8n debe tener HTTPS público (webhook de Telegram y de Evolution).\n5. Activa este workflow y prueba texto. Cron avisos = 02. WhatsApp leads = 03+04. Graficas = 05 (activar y pegar su ID en la tool enviar_grafica).\n\nLas tools del agente son **Postgres Tool** (`postgresTool` v2.6), no el nodo Postgres del flujo.\nModelo: `deepseek-v4-flash`.\nSi falla con `reasoning_content` al usar tools, apaga thinking o usa OpenAI Chat Model con base URL `https://api.deepseek.com` y la misma key.",
-        "height": 380,
+        "content": "## Setup v2\n1. Corre `n8n/schema.sql` en Postgres (incluye leads WhatsApp).\n2. Mapea credenciales: Telegram, Postgres, DeepSeek.\n3. Speaches (voz Telegram): mismo servicio del 03. En **Transcribir voz** pega URL + `Bearer PEGAR_SPEACHES_API_KEY`.\n4. `allowedChatIds` en Config: vacío = todos; o `123,456` para allowlist.\n5. n8n debe tener HTTPS público (webhook de Telegram y de Evolution).\n6. Activa este workflow y prueba texto + nota de voz. Cron avisos = 02. WhatsApp leads = 03+04. Graficas = 05.\n\nLas tools del agente son **Postgres Tool** (`postgresTool` v2.6), no el nodo Postgres del flujo.\nModelo: `deepseek-flash` (Chat: maxTokens 4904 / temp 0.2).\nSi falla con `reasoning_content` al usar tools, apaga thinking o usa OpenAI Chat Model con base URL `https://api.deepseek.com` y la misma key.",
+        "height": 420,
         "width": 460,
         "color": 7
       },
@@ -71,22 +71,12 @@
           },
           "conditions": [
             {
-              "id": "has-text",
-              "leftValue": "={{ $json.message.text }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "exists",
-                "singleValue": true
-              }
-            },
-            {
-              "id": "not-bot",
-              "leftValue": "={{ Boolean($json.message.from.is_bot) }}",
+              "id": "useful",
+              "leftValue": "={{ Boolean($json.message.from.is_bot) === false && (Boolean($json.message.text) || Boolean($json.message.voice) || Boolean($json.message.audio)) }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
-                "operation": "false",
+                "operation": "true",
                 "singleValue": true
               }
             }
@@ -95,8 +85,8 @@
         },
         "options": {}
       },
-      "id": "if-text",
-      "name": "Hay texto?",
+      "id": "if-msg",
+      "name": "Hay mensaje?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
@@ -183,7 +173,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst allowed = String(cfg.allowedChatIds || '').trim();\nif (allowed) {\n  const ids = allowed.split(',').map((s) => s.trim()).filter(Boolean);\n  if (!ids.includes(String(chatId))) {\n    return [];\n  }\n}\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst todayIso = now.toISODate();\nconst year = now.year;\nconst systemMessage = [\n  'Eres un asistente de seguimientos en Telegram. Respondes en español, breve y claro.',\n  'Zona horaria fija: America/Caracas.',\n  'Hay DOS productos. No los mezcles:',\n  '1) Seguimiento comercial: si NO menciona llegada, check-in ni \"cuando llegue\", usa crear_seguimiento. Son DOS avisos a las 10:00: t3 (3 días antes) y day (el mismo día).',\n  '2) Seguimiento de llegada: si menciona llegada, check-in o \"cuando llegue\", usa crear_seguimiento_llegada. Son DOS avisos el MISMO día indicado: 16:00 y 20:00. NO crees t3 ni day. NO uses crear_seguimiento.',\n  'Tú NO calculas esas horas: pasa nombre, teléfono y fecha YYYY-MM-DD a la tool correcta.',\n  `Hoy en Venezuela: ${todayIso} (${now.toFormat('cccc d LLLL yyyy, HH:mm')}). Año vigente: ${year}. Mes de reportes por defecto: ${now.toFormat('yyyy-MM')}.`,\n  'Reglas de fecha (obligatorias):',\n  `- Si el cliente manda un rango (ej. \"28/08 al 30/08\", \"del 28 al 30\", \"28-30/08\", \"28/08 - 30/08\"), usa SOLO la PRIMERA fecha como estimated_date. Ignora la fecha final del rango.`,\n  `- Si el cliente manda día y mes sin año (28/08, 28-08, 28 de agosto), completa el año con el año vigente de Venezuela (${year}). No preguntes el año.`,\n  '- estimated_date para la herramienta SIEMPRE en formato YYYY-MM-DD, con ese año vigente.',\n  `- Ejemplo: hoy es ${todayIso} y el mensaje dice \"Fecha de reserva: 28/08 al 30/08\" → estimated_date = ${year}-08-28.`,\n  'Si falta nombre, teléfono o cualquier fecha, pregunta. Si dice \"el viernes\" u otra fecha relativa, confirma el YYYY-MM-DD usando la fecha de hoy en Venezuela.',\n  'Antes de crear, resume los datos (incluyendo la fecha YYYY-MM-DD que vas a usar) y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes. El campo tipo distingue comercial (T-3 / día 10:00) de llegada (16:00 / 20:00).',\n  'Para cancelar llama cancelar_seguimiento con nombre o teléfono Y tipo: llegada, comercial o todos.',\n  '- Si pide cancelar la llegada o check-in, tipo=llegada (no borres t3/day).',\n  '- Si pide cancelar el seguimiento comercial / el de las 10:00, tipo=comercial (no borres arrival_16/arrival_20).',\n  '- tipo=todos SOLO si pide borrar todas las alertas de ese cliente.',\n  'Si pide grafica, chart, barras, torta, pie, lineas o rendimiento visual, usa enviar_grafica. No inventes numeros ni pegues URLs de imagen en el texto.',\n  'enviar_grafica: tipo embudo_mes (etapas), reservas_dia (eje X = dias, series nuevos y recurrentes) o reservas_origen (nuevos vs recurrentes del mes). estilo barras, pie o lineas; si no dicen, barras. pie no aplica por dia; lineas solo por dia. periodo YYYY-MM; si no dicen mes, mes Venezuela.',\n  'La tool manda la foto a Telegram. Tu solo confirmas en texto corto que ya salio la grafica.',\n  'También consultas el embudo de WhatsApp. Un mismo teléfono puede reservar en varios meses: concretaron/reservaron = cierre EN ESE MES (certificado o primer concreto), NO el primer mensaje. Si origen=recurrente, empezó antes y volvió a cerrar: SÍ entra en el mes. Si piden revisar un cliente (nombre o teléfono) usa consultar_ficha_lead y resume first_touch, primer concreto y cada certificado. Para listados por NOMBRE usa listar_leads_reporte (tipo: concretaron, no_concretaron o atendidos). Siempre pasa periodo del mes actual Venezuela (YYYY-MM) salvo que pidan otro mes. estadisticas_leads_mes: reservaron incluye recurrentes; reservaron_recurrentes los separa; pct_reservaciones es solo conversaciones NUEVAS de ese mes que cerraron. Si piden clientes potenciales o difusión, usa listar_leads_potenciales y muestra SIEMPRE nombre, teléfono, etapa y scores (potencial, engagement, cierre, silencio). listar_preguntan_sin_reservar es los que preguntan mucho.',\n  'No inventes teléfonos, scores ni porcentajes: si la tool no trae filas, dilo. No ofrezcas enviar la difusión tú; solo lista y resume.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nreturn [{\n  json: {\n    chatInput: String(msg.text || '').trim(),\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n    todayIso,\n    year,\n  },\n}];\n"
+        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst allowed = String(cfg.allowedChatIds || '').trim();\nif (allowed) {\n  const ids = allowed.split(',').map((s) => s.trim()).filter(Boolean);\n  if (!ids.includes(String(chatId))) {\n    return [];\n  }\n}\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst todayIso = now.toISODate();\nconst year = now.year;\nconst systemMessage = [\n  'Eres un asistente de seguimientos en Telegram. Respondes en español, breve y claro.',\n  'Zona horaria fija: America/Caracas.',\n  'Hay DOS productos. No los mezcles:',\n  '1) Seguimiento comercial: si NO menciona llegada, check-in ni \"cuando llegue\", usa crear_seguimiento. Son DOS avisos a las 10:00: t3 (3 días antes) y day (el mismo día).',\n  '2) Seguimiento de llegada: si menciona llegada, check-in o \"cuando llegue\", usa crear_seguimiento_llegada. Son DOS avisos el MISMO día indicado: 16:00 y 20:00. NO crees t3 ni day. NO uses crear_seguimiento.',\n  'Tú NO calculas esas horas: pasa nombre, teléfono y fecha YYYY-MM-DD a la tool correcta.',\n  `Hoy en Venezuela: ${todayIso} (${now.toFormat('cccc d LLLL yyyy, HH:mm')}). Año vigente: ${year}. Mes de reportes por defecto: ${now.toFormat('yyyy-MM')}.`,\n  'Reglas de fecha (obligatorias):',\n  `- Si el cliente manda un rango (ej. \"28/08 al 30/08\", \"del 28 al 30\", \"28-30/08\", \"28/08 - 30/08\"), usa SOLO la PRIMERA fecha como estimated_date. Ignora la fecha final del rango.`,\n  `- Si el cliente manda día y mes sin año (28/08, 28-08, 28 de agosto), completa el año con el año vigente de Venezuela (${year}). No preguntes el año.`,\n  '- estimated_date para la herramienta SIEMPRE en formato YYYY-MM-DD, con ese año vigente.',\n  `- Ejemplo: hoy es ${todayIso} y el mensaje dice \"Fecha de reserva: 28/08 al 30/08\" → estimated_date = ${year}-08-28.`,\n  'Si falta nombre, teléfono o cualquier fecha, pregunta. Si dice \"el viernes\" u otra fecha relativa, confirma el YYYY-MM-DD usando la fecha de hoy en Venezuela.',\n  'Antes de crear, resume los datos (incluyendo la fecha YYYY-MM-DD que vas a usar) y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes. El campo tipo distingue comercial (T-3 / día 10:00) de llegada (16:00 / 20:00).',\n  'Para cancelar llama cancelar_seguimiento con nombre o teléfono Y tipo: llegada, comercial o todos.',\n  '- Si pide cancelar la llegada o check-in, tipo=llegada (no borres t3/day).',\n  '- Si pide cancelar el seguimiento comercial / el de las 10:00, tipo=comercial (no borres arrival_16/arrival_20).',\n  '- tipo=todos SOLO si pide borrar todas las alertas de ese cliente.',\n  'Si pide grafica, chart, barras, torta, pie, lineas o rendimiento visual, usa enviar_grafica. No inventes numeros ni pegues URLs de imagen en el texto.',\n  'enviar_grafica: tipo embudo_mes (etapas), reservas_dia (eje X = dias, series nuevos y recurrentes) o reservas_origen (nuevos vs recurrentes del mes). estilo barras, pie o lineas; si no dicen, barras. pie no aplica por dia; lineas solo por dia. periodo YYYY-MM; si no dicen mes, mes Venezuela.',\n  'La tool manda la foto a Telegram. Tu solo confirmas en texto corto que ya salio la grafica.',\n  'También consultas el embudo de WhatsApp. Un mismo teléfono puede reservar en varios meses: concretaron/reservaron = cierre EN ESE MES (certificado o primer concreto), NO el primer mensaje. Si origen=recurrente, empezó antes y volvió a cerrar: SÍ entra en el mes. Si piden revisar un cliente (nombre o teléfono) usa consultar_ficha_lead y resume first_touch, primer concreto y cada certificado. Para listados por NOMBRE usa listar_leads_reporte (tipo: concretaron, no_concretaron o atendidos). Siempre pasa periodo del mes actual Venezuela (YYYY-MM) salvo que pidan otro mes. estadisticas_leads_mes: reservaron incluye recurrentes; reservaron_recurrentes los separa; pct_reservaciones es solo conversaciones NUEVAS de ese mes que cerraron. Si piden clientes potenciales o difusión, usa listar_leads_potenciales y muestra SIEMPRE nombre, teléfono, etapa y scores (potencial, engagement, cierre, silencio). listar_preguntan_sin_reservar es los que preguntan mucho.',\n  'No inventes teléfonos, scores ni porcentajes: si la tool no trae filas, dilo. No ofrezcas enviar la difusión tú; solo lista y resume.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nlet voiceText = '';\ntry {\n  voiceText = String(($('Texto voz').first().json || {}).text || '').replace(/\\s+/g, ' ').trim();\n} catch (e) {\n  voiceText = '';\n}\nconst chatInput = voiceText\n  ? `[Audio] ${voiceText}`\n  : String(msg.text || '').trim();\nif (!chatInput) {\n  return [];\n}\nreturn [{\n  json: {\n    chatInput,\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n    todayIso,\n    year,\n  },\n}];\n"
       },
       "id": "prep",
       "name": "Preparar input",
@@ -217,11 +207,11 @@
         "model": {
           "__rl": true,
           "mode": "list",
-          "value": "deepseek-v4-flash"
+          "value": "deepseek-flash"
         },
         "options": {
-          "temperature": 0.2,
-          "maxTokens": 1024
+          "maxTokens": 4904,
+          "temperature": 0.2
         }
       },
       "id": "ds",
@@ -464,16 +454,17 @@
         "source": "database",
         "workflowId": {
           "__rl": true,
-          "value": "PEGAR_ID_WORKFLOW_05",
-          "mode": "id"
+          "value": "FdRJkLYuARcJ2C4p",
+          "mode": "list",
+          "cachedResultName": "Seguimientos: grafica reportes Telegram"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
           "value": {
             "telegram_chat_id": "={{ String($('Telegram Trigger').first().json.message.chat.id) }}",
-            "tipo": "={{ $fromAI('tipo', 'embudo_mes, reservas_dia o reservas_origen. embudo_mes si pide etapas/rendimiento del mes. reservas_dia si pide por dia. reservas_origen si pide nuevos vs recurrentes del mes.', 'string') }}",
+            "tipo": "={{ $fromAI('tipo', 'embudo_mes, reservas_dia o reservas_origen', 'string') }}",
             "periodo": "={{ $fromAI('periodo', 'Mes YYYY-MM. Si el usuario no indica mes, usa el mes actual de Venezuela', 'string') }}",
-            "estilo": "={{ $fromAI('estilo', 'barras, pie o lineas. Si no piden forma, barras. pie/torta para origen o embudo. lineas solo por dia.', 'string') }}"
+            "estilo": "={{ $fromAI('estilo', 'barras, pie o lineas. Si no piden forma, barras.', 'string') }}"
           }
         }
       },
@@ -649,11 +640,10 @@
         "model": {
           "__rl": true,
           "mode": "list",
-          "value": "deepseek-v4-flash"
+          "value": "deepseek-flash"
         },
         "options": {
-          "temperature": 0.1,
-          "maxTokens": 400
+          "temperature": 0.1
         }
       },
       "id": "ds-sum",
@@ -729,6 +719,202 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-voice",
+              "leftValue": "={{ Boolean($json.message.voice) || Boolean($json.message.audio) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-voice",
+      "name": "Es voz?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('Telegram Trigger').first().json.message.voice.file_id || $('Telegram Trigger').first().json.message.audio.file_id }}",
+        "additionalFields": {
+          "download": true
+        }
+      },
+      "id": "tg-file",
+      "name": "Descargar voz",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        -160
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      },
+      "webhookId": "tg-file-voice"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://test-speaches.i3clpy.easypanel.host/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer PEGAR_SPEACHES_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "Systran/faster-whisper-small"
+            },
+            {
+              "name": "language",
+              "value": "es"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "stt-voice",
+      "name": "Transcribir voz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        -160
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst dl = $('Descargar voz').first() || {};\nconst bin = (dl.binary && (dl.binary.data || Object.values(dl.binary)[0])) || null;\nconst hasFile = Boolean(bin && (bin.data || bin.id || bin.fileSize));\nconst errParts = [];\nif (raw.error) errParts.push(String(raw.error.message || raw.error));\nif (raw.message && !raw.text) errParts.push(String(raw.message));\nif (raw.errorMessage) errParts.push(String(raw.errorMessage));\nif (dl.json && (dl.json.error || dl.json.message) && !hasFile) {\n  errParts.push(String(dl.json.error || dl.json.message));\n}\nconst text = String(raw.text || '').replace(/\\s+/g, ' ').trim();\nconst ok = Boolean(hasFile && text);\nlet error = '';\nif (!hasFile) error = 'No pude descargar el audio de Telegram.';\nelse if (!text) error = errParts.join(' | ') || 'Speaches no devolvió texto (revisa token/URL del STT).';\nreturn [{ json: { text, ok, error } }];\n"
+      },
+      "id": "texto-voz",
+      "name": "Texto voz",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Voz Telegram → Speaches\nNotas de voz (`message.voice`) o audio (`message.audio`).\nTelegram File download → Speaches `/v1/audio/transcriptions`.\nModelo `Systran/faster-whisper-small`, `language=es`.\nBearer `PEGAR_SPEACHES_API_KEY`.\nSi descarga o STT fallan, **Hay texto voz?** corta el agente y **Aviso voz fallida** responde en Telegram.",
+        "height": 260,
+        "width": 420,
+        "color": 4
+      },
+      "id": "note-voice",
+      "name": "Nota voz Telegram",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        660,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-stt",
+              "leftValue": "={{ Boolean($json.ok) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-stt-ok",
+      "name": "Hay texto voz?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{ 'No pude escuchar el audio. ' + String($json.error || 'Intenta de nuevo o escribe el mensaje en texto.') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "tg-voice-fail",
+      "name": "Aviso voz fallida",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1540,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      },
+      "webhookId": "tg-voice-fail"
     }
   ],
   "connections": {
@@ -736,18 +922,7 @@
       "main": [
         [
           {
-            "node": "Hay texto?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Hay texto?": {
-      "main": [
-        [
-          {
-            "node": "Config",
+            "node": "Hay mensaje?",
             "type": "main",
             "index": 0
           }
@@ -1024,6 +1199,86 @@
           {
             "node": "Asistente seguimientos",
             "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay mensaje?": {
+      "main": [
+        [
+          {
+            "node": "Es voz?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es voz?": {
+      "main": [
+        [
+          {
+            "node": "Descargar voz",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar voz": {
+      "main": [
+        [
+          {
+            "node": "Transcribir voz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribir voz": {
+      "main": [
+        [
+          {
+            "node": "Texto voz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Texto voz": {
+      "main": [
+        [
+          {
+            "node": "Hay texto voz?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay texto voz?": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aviso voz fallida",
+            "type": "main",
             "index": 0
           }
         ]

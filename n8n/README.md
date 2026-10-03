@@ -21,7 +21,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 | Archivo | Qué es | LLM |
 |---------|--------|-----|
 | `schema.sql` | Avisos, memoria, **leads WhatsApp** | — |
-| `01-telegram-asistente-seguimientos.json` | Chat + tools (seguimientos y embudo) | Sí |
+| `01-telegram-asistente-seguimientos.json` | Chat + tools (seguimientos y embudo); **notas de voz** vía Speaches | Sí |
 | `02-cron-recordatorios.json` | Avisos 10:00 / 16:00 / 20:00 Caracas | No |
 | `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores + visión + **audios (Speaches)** | Sí (filtro + etapa + `deepseek-flash`) |
 | `04-cron-silencio-leads.json` | Silencio >24 h tras cotización | No |
@@ -30,6 +30,10 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 n8n tiene que ser alcanzable por HTTPS (`WEBHOOK_URL`). Telegram y Evolution no hablan con localhost.
 
 Zona horaria: `America/Caracas`.
+
+## Flujo 01 — voz Telegram
+
+Acepta texto o nota de voz (`voice` / `audio`). Si es voz: Telegram descarga el archivo → Speaches transcribe → el agente recibe `[Audio] …`. Misma URL/Bearer que el 03 (`PEGAR_SPEACHES_API_KEY`). DeepSeek Chat en prod: `maxTokens` 4904, temp `0.2`.
 
 ## Flujo 03 — qué hace
 
