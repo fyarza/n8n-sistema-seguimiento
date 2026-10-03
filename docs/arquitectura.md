@@ -72,6 +72,7 @@ Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta m
 |-------|----------|
 | `followup_reminders` | Avisos comerciales (t3, day) y de llegada (arrival_16, arrival_20) |
 | `assistant_chat_messages` / `conversation_summaries` | Memoria del bot Telegram |
+| `team_phones` | Números del equipo de ventas (traspasos); fuera del % de captación |
 | `leads` | Un WhatsApp = un lead (etapa + scores) |
 | `whatsapp_messages` | Historial (incluye `from_me`, `media_analysis`, `media_signal`) |
 | `lead_score_events` | Auditoría de cada clasificación o silencio |

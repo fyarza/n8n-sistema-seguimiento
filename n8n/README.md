@@ -8,7 +8,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 
 ## Quick path
 
-1. En Postgres, ejecuta `schema.sql` (si ya corriste v1/v2, vuelve a correrlo: tablas nuevas son `IF NOT EXISTS`; el ALTER actualiza `kind` para llegada y añade `media_analysis` / `media_signal`).
+1. En Postgres, ejecuta `schema.sql` (si ya corriste v1/v2, vuelve a correrlo: tablas nuevas son `IF NOT EXISTS`; el ALTER actualiza `kind` para llegada y añade `media_analysis` / `media_signal`; crea/seed `team_phones` para traspasos del equipo).
 2. Importa los cinco JSON (quedan inactivos).
 3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-flash`) y **OpenAI (DeepSeek vision)** (misma key, Base URL `https://api.deepseek.com/v1`).
 4. Speaches (transcripción de audios WhatsApp): servicio self-hosted con API OpenAI-compatible. En el nodo **Transcribir audio** del 03, pega la URL y `Bearer PEGAR_SPEACHES_API_KEY`. Modelo: `Systran/faster-whisper-small`, `language=es`.
@@ -70,8 +70,8 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `cancelar_seguimiento` | Cancela; pasa `tipo`: `llegada`, `comercial` o `todos` |
 | `listar_leads_potenciales` | Difusión: no reservaron, con potencial |
 | `listar_preguntan_sin_reservar` | Preguntan mucho y no cierran |
-| `estadisticas_leads_mes` | Conteos del mes: `reservaron` = cierres (certificado o primer concreto), incluye recurrentes |
-| `listar_leads_reporte` | Listado: `concretaron` (cierre **en ese mes**), `no_concretaron`, `atendidos`. Campo `origen` |
+| `estadisticas_leads_mes` | Conteos del mes: nuevos / recurrentes / **traspaso** (`team_phones`); `%` solo con clientes |
+| `listar_leads_reporte` | Listado: `concretaron` / `no_concretaron` / `traspasos` / `atendidos`. `origen`: nuevo, recurrente, traspaso, equipo, sin_cierre |
 | `consultar_ficha_lead` | Ficha de un teléfono/nombre: first_touch, certificados y avisos |
 | `enviar_grafica` | Tool Workflow: dispara el 05. `embudo_mes`, `reservas_dia` o `reservas_origen`. Estilo: `barras`, `pie`, `lineas` |
 

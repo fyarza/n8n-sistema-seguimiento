@@ -127,3 +127,39 @@ CREATE TABLE IF NOT EXISTS lead_score_events (
 
 CREATE INDEX IF NOT EXISTS idx_lead_score_lead_time
   ON lead_score_events (lead_id, created_at DESC);
+
+-- Números del equipo de ventas / traspaso interno (no son captación del chat).
+-- Mantener con INSERT/UPDATE; los reportes excluyen active=true del % de conversión.
+CREATE TABLE IF NOT EXISTS team_phones (
+  id BIGSERIAL PRIMARY KEY,
+  phone TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  team_tag TEXT NOT NULL DEFAULT 'equipo_ventas',
+  active BOOLEAN NOT NULL DEFAULT true,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT team_phones_phone_digits CHECK (phone ~ '^[0-9]+$'),
+  UNIQUE (phone)
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_phones_active
+  ON team_phones (phone)
+  WHERE active;
+
+-- Seed confirmado (nombre + número). ON CONFLICT actualiza nombre/tag si re-ejecutas.
+INSERT INTO team_phones (phone, name, team_tag, notes) VALUES
+  ('584127425397', 'Yoly Cuicas', 'equipo_ventas', 'Baywatch Reservas / traspasos'),
+  ('584244208619', 'Yenny Morales', 'equipo_ventas', 'Hotel Baywatch Morrocoy'),
+  ('584144355578', 'Clismary Orasma', 'equipo_ventas', NULL),
+  ('584244739618', 'Relvis Olivares', 'equipo_ventas', NULL),
+  ('584126470732', 'Jesus Gallardo', 'equipo_ventas', NULL),
+  ('584144026889', 'Darwin Brett', 'equipo_ventas', 'A menudo alias Evelin Yarza en WhatsApp'),
+  ('584244676361', 'Jeannie Barrolleta', 'equipo_ventas', NULL),
+  ('584144202819', 'Danielys Polanco', 'equipo_ventas', NULL)
+ON CONFLICT (phone) DO UPDATE SET
+  name = EXCLUDED.name,
+  team_tag = EXCLUDED.team_tag,
+  notes = COALESCE(EXCLUDED.notes, team_phones.notes),
+  active = true,
+  updated_at = now();

@@ -1,58 +1,47 @@
 {
-  "name": "Seguimientos: grafica reportes Telegram",
-  "active": false,
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "America/Caracas"
-  },
   "nodes": [
     {
       "parameters": {
-        "content": "## Grafica para el 01 (sin Trigger Telegram)\nLo llama la tool enviar_grafica. SQL → Chart.js → POST QuickChart → sendPhoto.\n\n1. Importa y mapea Postgres + Telegram.\n2. Publica/activa este flujo.\n3. En el 01, tool enviar_grafica: elige este workflow y refresca inputs.\n4. Config.quickchartUrl: interno `http://quickchart:80/chart` o publico `https://demo-quickchart.hiti0l.easypanel.host/chart`.\n5. chat.id lo manda el 01.\n6. tipo: embudo_mes | reservas_dia | reservas_origen.\n7. estilo: barras | pie | lineas (pie no aplica por dia; lineas solo por dia).\n8. periodo YYYY-MM.\n\nNo pongas nombres ni telefonos en la grafica.",
-        "height": 360,
-        "width": 460,
-        "color": 7
-      },
-      "id": "note-05",
-      "name": "Nota grafica",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        -320,
-        -80
-      ]
-    },
-    {
-      "parameters": {
-        "inputSource": "workflowInputs",
         "workflowInputs": {
           "values": [
             {
-              "name": "telegram_chat_id",
-              "type": "string"
+              "name": "telegram_chat_id"
             },
             {
-              "name": "tipo",
-              "type": "string"
+              "name": "tipo"
             },
             {
-              "name": "periodo",
-              "type": "string"
+              "name": "periodo"
             },
             {
-              "name": "estilo",
-              "type": "string"
+              "name": "estilo"
             }
           ]
         }
       },
-      "id": "start",
+      "id": "6e675542-350a-417c-913d-574acc79669c",
       "name": "Cuando lo llama el 01",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
       "position": [
-        0,
-        0
+        -720,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Grafica para el 01 (sin Trigger Telegram)\nLo llama la tool enviar_grafica. SQL → Chart.js → POST QuickChart → sendPhoto.\n\n1. Importa y mapea Postgres + Telegram.\n2. Publica/activa este flujo.\n3. En el 01, tool enviar_grafica: elige este workflow y refresca inputs.\n4. Config.quickchartUrl: interno `http://quickchart:80/chart` o publico `https://demo-quickchart.hiti0l.easypanel.host/chart`.\n5. chat.id lo manda el 01.\n6. tipo: embudo_mes | reservas_dia | reservas_origen.\n7. estilo: barras | pie | lineas (pie no aplica por dia; lineas solo por dia).\n8. periodo YYYY-MM.\n9. Cierres: nuevos / recurrentes / **traspasos** (tabla `team_phones`).\n\nNo pongas nombres ni telefonos en la grafica.",
+        "height": 400,
+        "width": 460,
+        "color": 7
+      },
+      "id": "44a3c95c-c85e-45e8-86a8-5229ac79f644",
+      "name": "Nota grafica",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        -304
       ]
     },
     {
@@ -85,30 +74,28 @@
             }
           ]
         },
-        "options": {
-          "includeOtherFields": true
-        }
+        "options": {}
       },
-      "id": "cfg",
+      "id": "45593849-0ce2-4b00-8da6-79830ad2b0cd",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        220,
-        0
+        -496,
+        144
       ]
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Config').first().json;\nconst trigger = $('Cuando lo llama el 01').first().json || {};\nconst incoming = $input.first().json || {};\nconst input = Object.assign({}, incoming, trigger);\nconst tz = String(cfg.timezone || 'America/Caracas');\nconst now = DateTime.now().setZone(tz);\nlet periodo = String(input.periodo || '').trim();\nif (!/^[0-9]{4}-[0-9]{2}$/.test(periodo)) {\n  periodo = now.toFormat('yyyy-MM');\n}\nconst rawTipo = String(input.tipo || '').toLowerCase().trim();\nconst rawEstilo = String(input.estilo || '').toLowerCase().trim();\nconst blob = `${rawTipo} ${rawEstilo}`.trim();\nconst porDia = /(dia|diario|d[ií]as|por dia|por día|rendimiento diario|time series|barras por dia)/.test(blob);\nconst porOrigen = /(origen|recurrent|nuevos?\\s*vs|nuevos y recurrent|recurrentes y nuevos)/.test(blob);\nlet tipo = 'embudo_mes';\nif (porDia) tipo = 'reservas_dia';\nelse if (porOrigen) tipo = 'reservas_origen';\nlet estilo = 'barras';\nif (/(pie|torta|donut|doughnut|circular|pastel)/.test(blob)) estilo = 'pie';\nelse if (/(linea|línea|lineas|líneas|lineal)/.test(blob)) estilo = 'lineas';\nconst estiloPedido = estilo;\nif (tipo === 'reservas_dia' && estilo === 'pie') estilo = 'barras';\nif (tipo !== 'reservas_dia' && estilo === 'lineas') estilo = 'barras';\nconst chatId = String(input.telegram_chat_id || '').trim();\nif (!chatId) {\n  throw new Error('Falta telegram_chat_id');\n}\nreturn [{ json: { telegram_chat_id: chatId, tipo, estilo, estiloPedido, periodo, timezone: tz } }];\n"
+        "jsCode": "const cfg = $('Config').first().json;\nconst trigger = $('Cuando lo llama el 01').first().json || {};\nconst incoming = $input.first().json || {};\nconst input = Object.assign({}, incoming, trigger);\nconst tz = String(cfg.timezone || 'America/Caracas');\nconst now = DateTime.now().setZone(tz);\nlet periodo = String(input.periodo || '').trim();\nif (!/^[0-9]{4}-[0-9]{2}$/.test(periodo)) {\n  periodo = now.toFormat('yyyy-MM');\n}\nconst rawTipo = String(input.tipo || '').toLowerCase().trim();\nconst rawEstilo = String(input.estilo || '').toLowerCase().trim();\nconst blob = `${rawTipo} ${rawEstilo}`.trim();\nconst porDia = /(dia|diario|d[ií]as|por dia|por día|rendimiento diario|time series|barras por dia)/.test(blob);\nconst porOrigen = /(origen|recurrent|nuevos?\\s*vs|nuevos y recurrent|recurrentes y nuevos|traspaso)/.test(blob);\nlet tipo = 'embudo_mes';\nif (porDia) tipo = 'reservas_dia';\nelse if (porOrigen) tipo = 'reservas_origen';\nlet estilo = 'barras';\nif (/(pie|torta|donut|doughnut|circular|pastel)/.test(blob)) estilo = 'pie';\nelse if (/(linea|línea|lineas|líneas|lineal)/.test(blob)) estilo = 'lineas';\nconst estiloPedido = estilo;\nif (tipo === 'reservas_dia' && estilo === 'pie') estilo = 'barras';\nif (tipo !== 'reservas_dia' && estilo === 'lineas') estilo = 'barras';\nconst chatId = String(input.telegram_chat_id || '').trim();\nif (!chatId) {\n  throw new Error('Falta telegram_chat_id');\n}\nreturn [{ json: { telegram_chat_id: chatId, tipo, estilo, estiloPedido, periodo, timezone: tz } }];\n"
       },
-      "id": "norm",
+      "id": "ae3a779d-4d80-4be3-bb6e-d08013c26799",
       "name": "Normalizar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        440,
-        0
+        -272,
+        144
       ]
     },
     {
@@ -135,30 +122,30 @@
         },
         "options": {}
       },
-      "id": "if-tipo",
+      "id": "196ca06a-e4e5-4876-b9d3-4813caaec04d",
       "name": "Es por dia?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        660,
-        0
+        -48,
+        144
       ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH periodo AS (\n  SELECT CASE\n    WHEN $1::text ~ '^[0-9]{4}-[0-9]{2}$' THEN ($1::text || '-01')::date\n    ELSE (timezone('America/Caracas', now()))::date\n  END AS d\n),\nbounds AS (\n  SELECT\n    (date_trunc('month', d)::timestamp AT TIME ZONE 'America/Caracas') AS start_at,\n    ((date_trunc('month', d) + interval '1 month')::timestamp AT TIME ZONE 'America/Caracas') AS end_at,\n    date_trunc('month', d)::date AS start_day,\n    (date_trunc('month', d) + interval '1 month')::date AS end_day\n  FROM periodo\n),\nfirst_touch AS (\n  SELECT lead_id, MIN(occurred_at) AS first_at\n  FROM whatsapp_messages\n  WHERE NOT from_me\n  GROUP BY lead_id\n),\ncierres AS (\n  SELECT lead_id, MIN(created_at) AS occurred_at\n  FROM lead_score_events\n  WHERE stage = 'concreto'\n  GROUP BY lead_id\n  UNION ALL\n  SELECT lead_id, occurred_at\n  FROM whatsapp_messages\n  WHERE from_me\n    AND (\n      (content_type = 'document' AND body ILIKE '%certificado%')\n      OR body ILIKE '%certificado de reserva%'\n    )\n),\ndays AS (\n  SELECT generate_series(start_day, end_day - 1, interval '1 day')::date AS dia\n  FROM bounds\n)\nSELECT\n  to_char(d.dia, 'DD/MM') AS label,\n  COUNT(DISTINCT l_ft.id)::int AS conversaciones,\n  COUNT(DISTINCT c.lead_id)::int AS reservaron,\n  COUNT(DISTINCT c.lead_id) FILTER (\n    WHERE ft_c.first_at >= b.start_at AND ft_c.first_at < b.end_at\n  )::int AS reservaron_nuevos,\n  COUNT(DISTINCT c.lead_id) FILTER (\n    WHERE ft_c.first_at < b.start_at\n  )::int AS reservaron_recurrentes,\n  COUNT(DISTINCT l_ft.id) FILTER (WHERE l_ft.stage = 'pregunto_no_concreto')::int AS preguntaron_sin_cerrar\nFROM days d\nCROSS JOIN bounds b\nLEFT JOIN first_touch f\n  ON (f.first_at AT TIME ZONE 'America/Caracas')::date = d.dia\nLEFT JOIN leads l_ft ON l_ft.id = f.lead_id\nLEFT JOIN cierres c\n  ON (c.occurred_at AT TIME ZONE 'America/Caracas')::date = d.dia\nLEFT JOIN first_touch ft_c ON ft_c.lead_id = c.lead_id\nGROUP BY d.dia\nORDER BY d.dia;",
+        "query": "WITH periodo AS (\n  SELECT CASE\n    WHEN $1::text ~ '^[0-9]{4}-[0-9]{2}$' THEN ($1::text || '-01')::date\n    ELSE (timezone('America/Caracas', now()))::date\n  END AS d\n),\nbounds AS (\n  SELECT\n    (date_trunc('month', d)::timestamp AT TIME ZONE 'America/Caracas') AS start_at,\n    ((date_trunc('month', d) + interval '1 month')::timestamp AT TIME ZONE 'America/Caracas') AS end_at,\n    date_trunc('month', d)::date AS start_day,\n    (date_trunc('month', d) + interval '1 month')::date AS end_day\n  FROM periodo\n),\nfirst_touch AS (\n  SELECT lead_id, MIN(occurred_at) AS first_at\n  FROM whatsapp_messages\n  WHERE NOT from_me\n  GROUP BY lead_id\n),\ncierres AS (\n  SELECT lead_id, MIN(created_at) AS occurred_at\n  FROM lead_score_events\n  WHERE stage = 'concreto'\n  GROUP BY lead_id\n  UNION ALL\n  SELECT lead_id, occurred_at\n  FROM whatsapp_messages\n  WHERE from_me\n    AND (\n      (content_type = 'document' AND body ILIKE '%certificado%')\n      OR body ILIKE '%certificado de reserva%'\n    )\n),\nteam_leads AS (\n  SELECT DISTINCT l.id AS lead_id\n  FROM leads l\n  INNER JOIN team_phones t ON t.active\n  WHERE regexp_replace(l.phone, '[^0-9]', '', 'g') = t.phone\n     OR (\n       char_length(regexp_replace(l.phone, '[^0-9]', '', 'g')) >= 10\n       AND char_length(t.phone) >= 10\n       AND right(regexp_replace(l.phone, '[^0-9]', '', 'g'), 10) = right(t.phone, 10)\n     )\n),\ndays AS (\n  SELECT generate_series(start_day, end_day - 1, interval '1 day')::date AS dia\n  FROM bounds\n)\nSELECT\n  to_char(d.dia, 'DD/MM') AS label,\n  COUNT(DISTINCT l_ft.id) FILTER (\n    WHERE NOT EXISTS (SELECT 1 FROM team_leads tl WHERE tl.lead_id = l_ft.id)\n  )::int AS conversaciones,\n  COUNT(DISTINCT c.lead_id)::int AS reservaron,\n  COUNT(DISTINCT c.lead_id) FILTER (\n    WHERE NOT EXISTS (SELECT 1 FROM team_leads tl WHERE tl.lead_id = c.lead_id)\n      AND ft_c.first_at >= b.start_at AND ft_c.first_at < b.end_at\n  )::int AS reservaron_nuevos,\n  COUNT(DISTINCT c.lead_id) FILTER (\n    WHERE NOT EXISTS (SELECT 1 FROM team_leads tl WHERE tl.lead_id = c.lead_id)\n      AND ft_c.first_at < b.start_at\n  )::int AS reservaron_recurrentes,\n  COUNT(DISTINCT c.lead_id) FILTER (\n    WHERE EXISTS (SELECT 1 FROM team_leads tl WHERE tl.lead_id = c.lead_id)\n  )::int AS reservaron_traspaso,\n  COUNT(DISTINCT l_ft.id) FILTER (\n    WHERE l_ft.stage = 'pregunto_no_concreto'\n      AND NOT EXISTS (SELECT 1 FROM team_leads tl WHERE tl.lead_id = l_ft.id)\n  )::int AS preguntaron_sin_cerrar\nFROM days d\nCROSS JOIN bounds b\nLEFT JOIN first_touch f\n  ON (f.first_at AT TIME ZONE 'America/Caracas')::date = d.dia\nLEFT JOIN leads l_ft ON l_ft.id = f.lead_id\nLEFT JOIN cierres c\n  ON (c.occurred_at AT TIME ZONE 'America/Caracas')::date = d.dia\nLEFT JOIN first_touch ft_c ON ft_c.lead_id = c.lead_id\nGROUP BY d.dia\nORDER BY d.dia;",
         "options": {
           "queryReplacement": "={{ [$('Normalizar').first().json.periodo] }}"
         }
       },
-      "id": "pg-dias",
+      "id": "982f97b5-5359-4aea-8940-2a70cb6af258",
       "name": "SQL reservas por dia",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        880,
-        -120
+        176,
+        48
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -171,18 +158,18 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH periodo AS (\n  SELECT CASE\n    WHEN $1::text ~ '^[0-9]{4}-[0-9]{2}$' THEN ($1::text || '-01')::date\n    ELSE (timezone('America/Caracas', now()))::date\n  END AS d\n),\nbounds AS (\n  SELECT\n    date_trunc('month', d)::timestamp AT TIME ZONE 'America/Caracas' AS start_at,\n    (date_trunc('month', d) + interval '1 month')::timestamp AT TIME ZONE 'America/Caracas' AS end_at\n  FROM periodo\n),\nfirst_touch AS (\n  SELECT lead_id, MIN(occurred_at) AS first_at\n  FROM whatsapp_messages\n  WHERE NOT from_me\n  GROUP BY lead_id\n),\ncierres AS (\n  SELECT lead_id, MIN(created_at) AS occurred_at\n  FROM lead_score_events\n  WHERE stage = 'concreto'\n  GROUP BY lead_id\n  UNION ALL\n  SELECT lead_id, occurred_at\n  FROM whatsapp_messages\n  WHERE from_me\n    AND (\n      (content_type = 'document' AND body ILIKE '%certificado%')\n      OR body ILIKE '%certificado de reserva%'\n    )\n),\ncierres_mes AS (\n  SELECT DISTINCT c.lead_id\n  FROM cierres c\n  CROSS JOIN bounds b\n  WHERE c.occurred_at >= b.start_at AND c.occurred_at < b.end_at\n),\ncohorte AS (\n  SELECT l.id, l.stage\n  FROM first_touch f\n  JOIN leads l ON l.id = f.lead_id\n  CROSS JOIN bounds b\n  WHERE f.first_at >= b.start_at AND f.first_at < b.end_at\n)\nSELECT\n  to_char(timezone('America/Caracas', b.start_at), 'YYYY-MM') AS periodo,\n  COUNT(DISTINCT co.id)::int AS conversaciones,\n  COUNT(DISTINCT cm.lead_id)::int AS reservaron,\n  COUNT(DISTINCT cm.lead_id) FILTER (\n    WHERE ft.first_at >= b.start_at AND ft.first_at < b.end_at\n  )::int AS reservaron_nuevos,\n  COUNT(DISTINCT cm.lead_id) FILTER (\n    WHERE ft.first_at < b.start_at\n  )::int AS reservaron_recurrentes,\n  COUNT(DISTINCT co.id) FILTER (WHERE co.stage = 'pregunto_no_concreto')::int AS preguntaron_sin_cerrar,\n  COUNT(DISTINCT co.id) FILTER (WHERE co.stage = 'no_respondio')::int AS no_respondieron,\n  COUNT(DISTINCT co.id) FILTER (WHERE co.stage = 'en_proceso')::int AS en_proceso,\n  ROUND(\n    100.0 * COUNT(DISTINCT cm.lead_id) FILTER (\n      WHERE ft.first_at >= b.start_at AND ft.first_at < b.end_at\n    ) / NULLIF(COUNT(DISTINCT co.id), 0),\n    1\n  ) AS pct_reservaciones\nFROM bounds b\nLEFT JOIN cohorte co ON true\nLEFT JOIN cierres_mes cm ON true\nLEFT JOIN first_touch ft ON ft.lead_id = cm.lead_id\nGROUP BY b.start_at;",
+        "query": "WITH periodo AS (\n  SELECT CASE\n    WHEN $1::text ~ '^[0-9]{4}-[0-9]{2}$' THEN ($1::text || '-01')::date\n    ELSE (timezone('America/Caracas', now()))::date\n  END AS d\n),\nbounds AS (\n  SELECT\n    date_trunc('month', d)::timestamp AT TIME ZONE 'America/Caracas' AS start_at,\n    (date_trunc('month', d) + interval '1 month')::timestamp AT TIME ZONE 'America/Caracas' AS end_at\n  FROM periodo\n),\nfirst_touch AS (\n  SELECT lead_id, MIN(occurred_at) AS first_at\n  FROM whatsapp_messages\n  WHERE NOT from_me\n  GROUP BY lead_id\n),\ncierres AS (\n  SELECT lead_id, MIN(created_at) AS occurred_at\n  FROM lead_score_events\n  WHERE stage = 'concreto'\n  GROUP BY lead_id\n  UNION ALL\n  SELECT lead_id, occurred_at\n  FROM whatsapp_messages\n  WHERE from_me\n    AND (\n      (content_type = 'document' AND body ILIKE '%certificado%')\n      OR body ILIKE '%certificado de reserva%'\n    )\n),\ncierres_mes AS (\n  SELECT DISTINCT c.lead_id\n  FROM cierres c\n  CROSS JOIN bounds b\n  WHERE c.occurred_at >= b.start_at AND c.occurred_at < b.end_at\n),\nteam_leads AS (\n  SELECT DISTINCT l.id AS lead_id\n  FROM leads l\n  INNER JOIN team_phones t ON t.active\n  WHERE regexp_replace(l.phone, '[^0-9]', '', 'g') = t.phone\n     OR (\n       char_length(regexp_replace(l.phone, '[^0-9]', '', 'g')) >= 10\n       AND char_length(t.phone) >= 10\n       AND right(regexp_replace(l.phone, '[^0-9]', '', 'g'), 10) = right(t.phone, 10)\n     )\n),\ncohorte AS (\n  SELECT l.id, l.stage\n  FROM first_touch f\n  JOIN leads l ON l.id = f.lead_id\n  CROSS JOIN bounds b\n  WHERE f.first_at >= b.start_at AND f.first_at < b.end_at\n    AND NOT EXISTS (SELECT 1 FROM team_leads tl WHERE tl.lead_id = l.id)\n)\nSELECT\n  to_char(timezone('America/Caracas', b.start_at), 'YYYY-MM') AS periodo,\n  COUNT(DISTINCT co.id)::int AS conversaciones,\n  COUNT(DISTINCT cm.lead_id)::int AS reservaron,\n  COUNT(DISTINCT cm.lead_id) FILTER (\n    WHERE tl.lead_id IS NULL\n      AND ft.first_at >= b.start_at AND ft.first_at < b.end_at\n  )::int AS reservaron_nuevos,\n  COUNT(DISTINCT cm.lead_id) FILTER (\n    WHERE tl.lead_id IS NULL\n      AND ft.first_at < b.start_at\n  )::int AS reservaron_recurrentes,\n  COUNT(DISTINCT cm.lead_id) FILTER (\n    WHERE tl.lead_id IS NOT NULL\n  )::int AS reservaron_traspaso,\n  COUNT(DISTINCT co.id) FILTER (WHERE co.stage = 'pregunto_no_concreto')::int AS preguntaron_sin_cerrar,\n  COUNT(DISTINCT co.id) FILTER (WHERE co.stage = 'no_respondio')::int AS no_respondieron,\n  COUNT(DISTINCT co.id) FILTER (WHERE co.stage = 'en_proceso')::int AS en_proceso,\n  ROUND(\n    100.0 * COUNT(DISTINCT cm.lead_id) FILTER (\n      WHERE tl.lead_id IS NULL\n        AND ft.first_at >= b.start_at AND ft.first_at < b.end_at\n    ) / NULLIF(COUNT(DISTINCT co.id), 0),\n    1\n  ) AS pct_reservaciones\nFROM bounds b\nLEFT JOIN cohorte co ON true\nLEFT JOIN cierres_mes cm ON true\nLEFT JOIN first_touch ft ON ft.lead_id = cm.lead_id\nLEFT JOIN team_leads tl ON tl.lead_id = cm.lead_id\nGROUP BY b.start_at;",
         "options": {
           "queryReplacement": "={{ [$('Normalizar').first().json.periodo] }}"
         }
       },
-      "id": "pg-embudo",
+      "id": "0f888999-1ea8-4258-a993-2982b14545c5",
       "name": "SQL embudo mes",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        880,
-        120
+        176,
+        240
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -194,15 +181,15 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Config').first().json;\nconst meta = $('Normalizar').first().json;\nconst rows = $input.all().map((i) => i.json).filter((r) => r && (r.periodo || r.label));\nconst width = Number(cfg.chartWidth || 600);\nconst height = Number(cfg.chartHeight || 320);\nconst tick = { fontColor: '#444444' };\nconst grid = { color: 'rgba(0,0,0,0.08)' };\nconst scalesV2 = {\n  xAxes: [{ ticks: tick, gridLines: grid }],\n  yAxes: [{ ticks: { ...tick, beginAtZero: true }, gridLines: grid }],\n};\nconst COLOR_NUEVOS = '#3b82f6';\nconst COLOR_REC = '#f97316';\nconst COLOR_CONV = '#94a3b8';\n\nconst sum = (xs) => xs.reduce((a, b) => a + b, 0);\n\nconst chartOf = (type, labels, datasets, title) => {\n  const cartesian = type === 'bar' || type === 'horizontalBar' || type === 'line';\n  const options = {\n    legend: { position: 'bottom', labels: { fontColor: '#333333' } },\n    title: { display: true, text: title, fontColor: '#222222' },\n  };\n  if (cartesian) options.scales = scalesV2;\n  return { type, data: { labels, datasets }, options };\n};\n\nconst lineDs = (label, data, color) => ({\n  label,\n  data,\n  borderColor: color,\n  backgroundColor: color,\n  fill: false,\n  pointRadius: 3,\n});\n\nconst barDs = (label, data, color) => ({\n  label,\n  data,\n  backgroundColor: color,\n});\n\nlet chart;\nlet caption;\nconst estilo = meta.estilo || 'barras';\nconst coerced = meta.estiloPedido && meta.estiloPedido !== estilo\n  ? ` Estilo ${meta.estiloPedido} no aplica a este tipo; se uso ${estilo}.`\n  : '';\n\nif (meta.tipo === 'reservas_dia') {\n  const labels = rows.map((r) => String(r.label));\n  const conversaciones = rows.map((r) => Number(r.conversaciones || 0));\n  const nuevos = rows.map((r) => Number(r.reservaron_nuevos || 0));\n  const recurrentes = rows.map((r) => Number(r.reservaron_recurrentes || 0));\n  const totalN = sum(nuevos);\n  const totalR = sum(recurrentes);\n  const title = 'Cierres diarios ' + meta.periodo;\n  if (estilo === 'lineas') {\n    chart = chartOf('line', labels, [\n      lineDs('Conversaciones', conversaciones, COLOR_CONV),\n      lineDs('Nuevos', nuevos, COLOR_NUEVOS),\n      lineDs('Recurrentes', recurrentes, COLOR_REC),\n    ], title);\n  } else {\n    chart = chartOf('bar', labels, [\n      barDs('Conversaciones', conversaciones, COLOR_CONV),\n      barDs('Nuevos', nuevos, COLOR_NUEVOS),\n      barDs('Recurrentes', recurrentes, COLOR_REC),\n    ], title);\n  }\n  caption = 'Rendimiento diario ' + meta.periodo + ' (hora Venezuela). Nuevos: ' + totalN + '. Recurrentes: ' + totalR + '.' + coerced;\n} else {\n  const r = rows[0] || {};\n  const conversaciones = Number(r.conversaciones || 0);\n  const reservaron = Number(r.reservaron || 0);\n  const nuevos = Number(r.reservaron_nuevos || 0);\n  const recurrentes = Number(r.reservaron_recurrentes || 0);\n  const preguntaron = Number(r.preguntaron_sin_cerrar || 0);\n  const noResp = Number(r.no_respondieron || 0);\n  const enProceso = Number(r.en_proceso || 0);\n  const pct = r.pct_reservaciones == null ? '' : String(r.pct_reservaciones);\n\n  if (meta.tipo === 'reservas_origen') {\n    const labels = ['Nuevos', 'Recurrentes'];\n    const data = [nuevos, recurrentes];\n    const title = 'Nuevos vs recurrentes ' + meta.periodo;\n    if (estilo === 'pie') {\n      chart = chartOf('doughnut', labels, [{\n        data,\n        backgroundColor: [COLOR_NUEVOS, COLOR_REC],\n      }], title);\n    } else {\n      chart = chartOf('bar', labels, [{\n        label: 'Cierres',\n        data,\n        backgroundColor: [COLOR_NUEVOS, COLOR_REC],\n      }], title);\n    }\n    caption = 'Cierres ' + meta.periodo + '. Nuevos: ' + nuevos + '. Recurrentes: ' + recurrentes + '. Total: ' + reservaron + '.' + coerced;\n  } else {\n    const labels = ['Reservaron', 'Preguntaron sin cerrar', 'No respondieron', 'En proceso'];\n    const data = [reservaron, preguntaron, noResp, enProceso];\n    const colors = ['#22c55e', '#f59e0b', '#ef4444', '#3b82f6'];\n    const title = 'Embudo WhatsApp ' + meta.periodo;\n    if (estilo === 'pie') {\n      chart = chartOf('doughnut', labels, [{ data, backgroundColor: colors }], title);\n    } else {\n      chart = chartOf('bar', labels, [{ label: 'Leads ' + meta.periodo, data, backgroundColor: colors }], title);\n    }\n    caption = 'Embudo ' + meta.periodo + '. Conversaciones nuevas: ' + conversaciones + (pct !== '' ? '. % reservas nuevas: ' + pct : '') + '. Cierres del mes: ' + reservaron + ' (nuevos: ' + nuevos + ', recurrentes: ' + recurrentes + ').' + coerced;\n  }\n}\n\nreturn [{\n  json: {\n    telegram_chat_id: meta.telegram_chat_id,\n    tipo: meta.tipo,\n    estilo,\n    periodo: meta.periodo,\n    caption,\n    httpBody: {\n      backgroundColor: 'white',\n      width,\n      height,\n      format: 'png',\n      chart,\n    },\n  },\n}];\n"
+        "jsCode": "const cfg = $('Config').first().json;\nconst meta = $('Normalizar').first().json;\nconst rows = $input.all().map((i) => i.json).filter((r) => r && (r.periodo || r.label));\nconst width = Number(cfg.chartWidth || 600);\nconst height = Number(cfg.chartHeight || 320);\nconst tick = { fontColor: '#444444' };\nconst grid = { color: 'rgba(0,0,0,0.08)' };\nconst scalesV2 = {\n  xAxes: [{ ticks: tick, gridLines: grid }],\n  yAxes: [{ ticks: { ...tick, beginAtZero: true }, gridLines: grid }],\n};\nconst COLOR_NUEVOS = '#3b82f6';\nconst COLOR_REC = '#f97316';\nconst COLOR_CONV = '#94a3b8';\nconst COLOR_TRASPASO = '#a855f7';\n\nconst sum = (xs) => xs.reduce((a, b) => a + b, 0);\n\nconst chartOf = (type, labels, datasets, title) => {\n  const cartesian = type === 'bar' || type === 'horizontalBar' || type === 'line';\n  const options = {\n    legend: { position: 'bottom', labels: { fontColor: '#333333' } },\n    title: { display: true, text: title, fontColor: '#222222' },\n  };\n  if (cartesian) options.scales = scalesV2;\n  return { type, data: { labels, datasets }, options };\n};\n\nconst lineDs = (label, data, color) => ({\n  label,\n  data,\n  borderColor: color,\n  backgroundColor: color,\n  fill: false,\n  pointRadius: 3,\n});\n\nconst barDs = (label, data, color) => ({\n  label,\n  data,\n  backgroundColor: color,\n});\n\nlet chart;\nlet caption;\nconst estilo = meta.estilo || 'barras';\nconst coerced = meta.estiloPedido && meta.estiloPedido !== estilo\n  ? ` Estilo ${meta.estiloPedido} no aplica a este tipo; se uso ${estilo}.`\n  : '';\n\nif (meta.tipo === 'reservas_dia') {\n  const labels = rows.map((r) => String(r.label));\n  const conversaciones = rows.map((r) => Number(r.conversaciones || 0));\n  const nuevos = rows.map((r) => Number(r.reservaron_nuevos || 0));\n  const recurrentes = rows.map((r) => Number(r.reservaron_recurrentes || 0));\n  const traspasos = rows.map((r) => Number(r.reservaron_traspaso || 0));\n  const totalN = sum(nuevos);\n  const totalR = sum(recurrentes);\n  const totalT = sum(traspasos);\n  const title = 'Cierres diarios ' + meta.periodo;\n  if (estilo === 'lineas') {\n    chart = chartOf('line', labels, [\n      lineDs('Conversaciones', conversaciones, COLOR_CONV),\n      lineDs('Nuevos', nuevos, COLOR_NUEVOS),\n      lineDs('Recurrentes', recurrentes, COLOR_REC),\n      lineDs('Traspasos', traspasos, COLOR_TRASPASO),\n    ], title);\n  } else {\n    chart = chartOf('bar', labels, [\n      barDs('Conversaciones', conversaciones, COLOR_CONV),\n      barDs('Nuevos', nuevos, COLOR_NUEVOS),\n      barDs('Recurrentes', recurrentes, COLOR_REC),\n      barDs('Traspasos', traspasos, COLOR_TRASPASO),\n    ], title);\n  }\n  caption = 'Rendimiento diario ' + meta.periodo + ' (hora Venezuela). Nuevos: ' + totalN + '. Recurrentes: ' + totalR + '. Traspasos: ' + totalT + '.' + coerced;\n} else {\n  const r = rows[0] || {};\n  const conversaciones = Number(r.conversaciones || 0);\n  const reservaron = Number(r.reservaron || 0);\n  const nuevos = Number(r.reservaron_nuevos || 0);\n  const recurrentes = Number(r.reservaron_recurrentes || 0);\n  const traspasos = Number(r.reservaron_traspaso || 0);\n  const preguntaron = Number(r.preguntaron_sin_cerrar || 0);\n  const noResp = Number(r.no_respondieron || 0);\n  const enProceso = Number(r.en_proceso || 0);\n  const pct = r.pct_reservaciones == null ? '' : String(r.pct_reservaciones);\n\n  if (meta.tipo === 'reservas_origen') {\n    const labels = ['Nuevos', 'Recurrentes', 'Traspasos'];\n    const data = [nuevos, recurrentes, traspasos];\n    const title = 'Origen de cierres ' + meta.periodo;\n    if (estilo === 'pie') {\n      chart = chartOf('doughnut', labels, [{\n        data,\n        backgroundColor: [COLOR_NUEVOS, COLOR_REC, COLOR_TRASPASO],\n      }], title);\n    } else {\n      chart = chartOf('bar', labels, [{\n        label: 'Cierres',\n        data,\n        backgroundColor: [COLOR_NUEVOS, COLOR_REC, COLOR_TRASPASO],\n      }], title);\n    }\n    caption = 'Cierres ' + meta.periodo + '. Nuevos: ' + nuevos + '. Recurrentes: ' + recurrentes + '. Traspasos: ' + traspasos + '. Total: ' + reservaron + '.' + coerced;\n  } else {\n    const labels = ['Reservaron', 'Preguntaron sin cerrar', 'No respondieron', 'En proceso'];\n    const data = [reservaron, preguntaron, noResp, enProceso];\n    const colors = ['#22c55e', '#f59e0b', '#ef4444', '#3b82f6'];\n    const title = 'Embudo WhatsApp ' + meta.periodo;\n    if (estilo === 'pie') {\n      chart = chartOf('doughnut', labels, [{ data, backgroundColor: colors }], title);\n    } else {\n      chart = chartOf('bar', labels, [{ label: 'Leads ' + meta.periodo, data, backgroundColor: colors }], title);\n    }\n    caption = 'Embudo ' + meta.periodo + '. Conversaciones (clientes): ' + conversaciones + (pct !== '' ? '. % reservas nuevas: ' + pct : '') + '. Cierres: ' + reservaron + ' (nuevos: ' + nuevos + ', recurrentes: ' + recurrentes + ', traspasos: ' + traspasos + ').' + coerced;\n  }\n}\n\nreturn [{\n  json: {\n    telegram_chat_id: meta.telegram_chat_id,\n    tipo: meta.tipo,\n    estilo,\n    periodo: meta.periodo,\n    caption,\n    httpBody: {\n      backgroundColor: 'white',\n      width,\n      height,\n      format: 'png',\n      chart,\n    },\n  },\n}];\n"
       },
-      "id": "armar",
+      "id": "54dcbfcd-01c9-4731-bebe-1a902b26209e",
       "name": "Armar grafica",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
-        0
+        400,
+        144
       ]
     },
     {
@@ -224,19 +211,18 @@
         "options": {
           "response": {
             "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "data"
+              "responseFormat": "file"
             }
           }
         }
       },
-      "id": "http-qc",
+      "id": "dee49398-e97c-44d3-8651-618eab8eac97",
       "name": "Render QuickChart",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1320,
-        0
+        624,
+        144
       ]
     },
     {
@@ -244,21 +230,20 @@
         "operation": "sendPhoto",
         "chatId": "={{ $('Armar grafica').first().json.telegram_chat_id }}",
         "binaryData": true,
-        "binaryPropertyName": "data",
         "additionalFields": {
           "caption": "={{ $('Armar grafica').first().json.caption }}",
-          "fileName": "grafica.png",
-          "appendAttribution": false
+          "fileName": "grafica.png"
         }
       },
-      "id": "tg-photo",
+      "id": "8f6665ff-1cfa-47b9-a84b-878c2288b84c",
       "name": "Enviar foto",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1540,
-        0
+        848,
+        144
       ],
+      "webhookId": "98c33a21-6687-4ca4-9923-4d6fcd856909",
       "credentials": {
         "telegramApi": {
           "id": "PEGAR_CRED_TELEGRAM",
@@ -286,13 +271,13 @@
         },
         "options": {}
       },
-      "id": "out",
+      "id": "97321d9e-2c37-4fc7-8e7f-2708040775f2",
       "name": "Respuesta a la tool",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1760,
-        0
+        1072,
+        144
       ]
     }
   ],
@@ -403,5 +388,15 @@
         ]
       ]
     }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "name": "Seguimientos: Telegram grafica reportes",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas"
   }
 }
