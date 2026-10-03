@@ -791,7 +791,7 @@
           ]
         },
         "options": {
-          "timeout": 120000
+          "timeout": 300000
         }
       },
       "id": "stt-voice",
@@ -804,11 +804,14 @@
       ],
       "continueOnFail": true,
       "alwaysOutputData": true,
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst dl = $('Descargar voz').first() || {};\nconst bin = (dl.binary && (dl.binary.data || Object.values(dl.binary)[0])) || null;\nconst hasFile = Boolean(bin && (bin.data || bin.id || bin.fileSize));\nconst errParts = [];\nif (raw.error) errParts.push(String(raw.error.message || raw.error));\nif (raw.message && !raw.text) errParts.push(String(raw.message));\nif (raw.errorMessage) errParts.push(String(raw.errorMessage));\nif (dl.json && (dl.json.error || dl.json.message) && !hasFile) {\n  errParts.push(String(dl.json.error || dl.json.message));\n}\nconst text = String(raw.text || '').replace(/\\s+/g, ' ').trim();\nconst ok = Boolean(hasFile && text);\nlet error = '';\nif (!hasFile) error = 'No pude descargar el audio de Telegram.';\nelse if (!text) error = errParts.join(' | ') || 'Speaches no devolvió texto (revisa token/URL del STT).';\nreturn [{ json: { text, ok, error } }];\n"
+        "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst dl = $('Descargar voz').first() || {};\nconst bin = (dl.binary && (dl.binary.data || Object.values(dl.binary)[0])) || null;\nconst hasFile = Boolean(bin && (bin.data || bin.id || bin.fileSize));\n\nfunction briefErr(v) {\n  let s = '';\n  if (v == null) return '';\n  if (typeof v === 'object') {\n    s = String(v.message || v.error || v.statusMessage || v.statusCode || '');\n    if (!s) {\n      try { s = JSON.stringify(v); } catch (e) { s = String(v); }\n    }\n  } else {\n    s = String(v);\n  }\n  s = s.replace(/<!DOCTYPE[\\s\\S]*/i, '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n  if (/502|bad gateway/i.test(s) || /ECONNRESET|ETIMEDOUT|timeout/i.test(s)) {\n    return 'servicio STT caído o timeout (audio largo)';\n  }\n  if (/401|403|not authenticated|unauthorized/i.test(s)) {\n    return 'STT sin autorización (revisa Bearer)';\n  }\n  return s.slice(0, 120);\n}\n\nconst errParts = [];\nif (raw.error) errParts.push(briefErr(raw.error));\nif (raw.message && !raw.text) errParts.push(briefErr(raw.message));\nif (raw.errorMessage) errParts.push(briefErr(raw.errorMessage));\nif (raw.statusCode && Number(raw.statusCode) >= 400) errParts.push(briefErr(String(raw.statusCode)));\nif (dl.json && (dl.json.error || dl.json.message) && !hasFile) {\n  errParts.push(briefErr(dl.json.error || dl.json.message));\n}\n\nconst text = String(raw.text || '').replace(/\\s+/g, ' ').trim();\nconst ok = Boolean(hasFile && text);\nlet error = '';\nif (!hasFile) {\n  error = 'No pude descargar el audio de Telegram.';\n} else if (!text) {\n  const hint = errParts.filter(Boolean)[0] || 'Speaches no devolvió texto';\n  error = hint;\n}\n\n// Mensaje amable para Telegram (sin HTML crudo)\nlet aviso = 'No pude escuchar el audio.';\nif (!hasFile) {\n  aviso = 'No pude descargar el audio de Telegram. Intenta de nuevo o escribe el mensaje.';\n} else if (!text) {\n  aviso = 'No pude transcribir el audio (a veces falla con audios largos o si Speaches está saturado). Prueba un audio más corto o escribe el mensaje.';\n}\n\nreturn [{ json: { text, ok, error, aviso } }];\n"
       },
       "id": "texto-voz",
       "name": "Texto voz",
@@ -821,7 +824,7 @@
     },
     {
       "parameters": {
-        "content": "## Voz Telegram → Speaches\nNotas de voz (`message.voice`) o audio (`message.audio`).\nTelegram File download → Speaches `/v1/audio/transcriptions`.\nModelo `Systran/faster-whisper-small`, `language=es`.\nBearer `PEGAR_SPEACHES_API_KEY`.\nSi descarga o STT fallan, **Hay texto voz?** corta el agente y **Aviso voz fallida** responde en Telegram.",
+        "content": "## Voz Telegram → Speaches\nNotas de voz / audio → download → Speaches.\nTimeout STT **300s** (audios largos).\nSi falla: **Aviso voz fallida** con texto fijo\n(nunca pega HTML del 502 en Telegram).",
         "height": 260,
         "width": 420,
         "color": 4
@@ -872,7 +875,7 @@
     {
       "parameters": {
         "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
-        "text": "={{ 'No pude escuchar el audio. ' + String($json.error || 'Intenta de nuevo o escribe el mensaje en texto.') }}",
+        "text": "={{ $('Texto voz').first().json.aviso || 'No pude escuchar el audio. Intenta de nuevo o escribe el mensaje en texto.' }}",
         "additionalFields": {
           "appendAttribution": false,
           "parse_mode": "HTML",
@@ -893,7 +896,9 @@
           "name": "Telegram account"
         }
       },
-      "webhookId": "tg-voice-fail"
+      "webhookId": "tg-voice-fail",
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
