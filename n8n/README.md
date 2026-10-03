@@ -79,8 +79,8 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 
 ## Memoria del chat Telegram
 
-- `assistant_chat_messages`: últimas **10 interacciones**.
-- Si hay más de 20 filas, compacta a `conversation_summaries` (máx. 800 caracteres).
+- `assistant_chat_messages`: ventana corta del agente.
+- Compacta a `conversation_summaries` solo si hay **más de 40** filas; luego borra y deja **20**. Así el contador baja a ~20 y no vuelve a compactar en cada mensaje (hace falta acumular otra vez ~20 msgs).
 
 ## Si el agente falla al usar tools
 

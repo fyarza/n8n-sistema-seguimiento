@@ -24,7 +24,7 @@
     },
     {
       "parameters": {
-        "content": "## Memoria\n- Tabla `assistant_chat_messages`: últimas **10 interacciones** (nodo Postgres Chat Memory).\n- Tabla `conversation_summaries`: compactado de lo que ya salió de la ventana.\n- Si hay más de 20 filas de mensajes, se resume con DeepSeek y se borran las viejas.\nEl resumen entra al system prompt para no perder clientes/fechas antiguas.",
+        "content": "## Memoria\n- Tabla `assistant_chat_messages`: ventana corta del agente.\n- Tabla `conversation_summaries`: hechos durables.\n\n**Compactar** solo si `COUNT(*) > 40`.\nLuego borra y deja las últimas **20** filas\n(el contador baja a ~20, no a 0).\nHace falta acumular otra vez ~20 msgs\npara volver a pasar 40 y compactar.\nAsí no compacta en cada mensaje.\n\nImportante: `Guardar resumen` → `Borrar viejos`.",
         "height": 260,
         "width": 420,
         "color": 5
@@ -532,13 +532,13 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "loose",
+            "typeValidation": "strict",
             "version": 2
           },
           "conditions": [
             {
               "id": "need-compact",
-              "leftValue": "={{ Number($json.n) > 20 }}",
+              "leftValue": "={{ Number($json.n) > 40 }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -694,7 +694,8 @@
           "id": "PEGAR_CRED_POSTGRES",
           "name": "Postgres account"
         }
-      }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -1307,7 +1308,8 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     },
     "Extraer viejos": {
