@@ -13,8 +13,9 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-flash`) y **OpenAI (DeepSeek vision)** (misma key, Base URL `https://api.deepseek.com/v1`).
 4. Speaches (transcripción de audios WhatsApp): servicio self-hosted con API OpenAI-compatible. En el nodo **Transcribir audio** del 03, pega la URL y `Bearer PEGAR_SPEACHES_API_KEY`. Modelo: `Systran/faster-whisper-small`, `language=es`.
 5. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
-6. Activa 01, prueba un mensaje. Luego 02, 03, 04 y **05**.
+6. Activa 01, prueba un mensaje. Luego 02, 03, 04, **05** y **06**.
 7. En el 01, tool `enviar_grafica`: elige el workflow 05 y refresca los inputs (`telegram_chat_id`, `tipo`, `periodo`, `estilo`). El 05 tiene que estar **publicado**.
+8. Tool `generar_certificado_reserva`: elige el workflow 06 y refresca inputs. El 06 tiene que estar **publicado**. Gotenberg: `Config.gotenbergUrl` (default `https://test-gotenberg.i3clpy.easypanel.host/forms/chromium/convert/html`). Assets en Filebrowser (URLs públicas en la plantilla).
 
 ## Archivos
 
@@ -26,6 +27,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 | `03-whatsapp-clasificar-leads.json` | Observador Evolution → scores + visión + audios + **certificados PDF (Docling)** | Sí (filtro + etapa + `deepseek-flash`) |
 | `04-cron-silencio-leads.json` | Silencio >24 h tras cotización | No |
 | `05-telegram-grafica-reportes.json` | SQL → QuickChart → foto Telegram | No |
+| `06-telegram-certificado-reserva.json` | HTML plantilla → Gotenberg PDF → documento Telegram | No |
 
 n8n tiene que ser alcanzable por HTTPS (`WEBHOOK_URL`). Telegram y Evolution no hablan con localhost.
 
@@ -33,9 +35,9 @@ Zona horaria: `America/Caracas`.
 
 ## Flujo 01 — voz Telegram
 
-Acepta texto o nota de voz (`voice` / `audio`). Si es voz: Telegram descarga el archivo → Speaches transcribe → el agente recibe `[Audio] …`. Misma URL/Bearer que el 03 (`PEGAR_SPEACHES_API_KEY`). DeepSeek Chat en prod: `maxTokens` 4904, temp `0.2`.
+Acepta texto o nota de voz (`voice` / `audio`). Si es voz: `record_voice` → descarga → Speaches (timeout 300s) → el agente recibe `[Audio] …`. Misma URL/Bearer que el 03 (`PEGAR_SPEACHES_API_KEY`). Si STT falla, aviso fijo (no se pega HTML del 502). DeepSeek Chat en prod: `maxTokens` 4904, temp `0.2`.
 
-Respuestas largas: tras el agente, DeepSeek intenta JSON `parte1`/`parte2`/`parte3` (≤3500; límite Telegram 4096). Si deja todo en una parte, `Parsear partes` corta en local. Los nodos Telegram usan `parse_mode=HTML` (n8n por defecto fuerza Markdown y rompe con `_`/`*` → *can't parse entities*).
+Respuestas: `Dividir Mensaje` convierte Markdown→HTML Telegram (`<b>`, tablas en `<pre>`, teléfonos en `<code>`), parte a ≤3500 y el loop envía con `typing` + Wait 1s. `parse_mode=HTML` (n8n por defecto fuerza Markdown y rompe con `_`/`*` → *can't parse entities*).
 
 ## Flujo 03 — qué hace
 
@@ -74,8 +76,11 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `listar_leads_reporte` | Listado: `concretaron` / `no_concretaron` / `traspasos` / `atendidos`. `origen`: nuevo, recurrente, traspaso, equipo, sin_cierre |
 | `consultar_ficha_lead` | Ficha de un teléfono/nombre: first_touch, certificados y avisos |
 | `enviar_grafica` | Tool Workflow: dispara el 05. `embudo_mes`, `reservas_dia` o `reservas_origen`. Estilo: `barras`, `pie`, `lineas` |
+| `generar_certificado_reserva` | Tool Workflow: dispara el 06. Arma HTML (plan fijo CON DESAYUNO, fecha Caracas) → Gotenberg → PDF al chat |
 
 `enviar_grafica` **no** es postgresTool. Tras importar, selecciona el workflow 05 (el JSON trae `PEGAR_ID_WORKFLOW_05`). QuickChart: `Config.quickchartUrl` en el 05 (`http://quickchart:80/chart` o `https://demo-quickchart.hiti0l.easypanel.host/chart`).
+
+`generar_certificado_reserva` tampoco es postgresTool. Tras importar, selecciona el workflow 06 (`PEGAR_ID_WORKFLOW_06`). Entradas: `nombre`, `cedula`, `pax`, `check_in`, `check_out`, `habitacion`, `monto_total_eur`, `pagos` (JSON array), `estado_pago`. Webhook de prueba: `POST /webhook/seguimientos-certificado`. Motor local: `plantilla-certificado/render-certificado.mjs`.
 
 ## Memoria del chat Telegram
 
