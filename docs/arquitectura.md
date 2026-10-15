@@ -72,7 +72,7 @@ Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta m
 |-------|----------|
 | `followup_reminders` | Avisos comerciales (t3, day) y de llegada (arrival_16, arrival_20) |
 | `assistant_chat_messages` / `conversation_summaries` | Memoria del bot Telegram |
-| `team_phones` | Internos fuera del %; `skip_followup=true` = lista negra del 03 (sin score). Se gestiona en BD |
+| `team_phones` | Internos fuera del %; `skip_followup=true` = lista negra (03 sin score; 01/05 fuera de totales). Tools `listar_lista_negra` / `gestionar_lista_negra` |
 | `leads` | Un WhatsApp = un lead (etapa + scores) |
 | `whatsapp_messages` | Historial (incluye `from_me`, `media_analysis`, `media_signal`) |
 | `lead_score_events` | Auditoría de cada clasificación o silencio |
@@ -89,8 +89,9 @@ Postgres Tool v2.6. El `chat.id` de Telegram no lo elige el LLM. Las listas de l
 | `cancelar_seguimiento` | Cancela; `tipo`: llegada, comercial o todos |
 | `listar_leads_potenciales` | “¿A quién le mando una difusión?” |
 | `listar_preguntan_sin_reservar` | “Los que preguntan y no reservan” |
-| `estadisticas_leads_mes` | Conteos del mes: `reservaron` son cierres (no el primer mensaje) |
-| `listar_leads_reporte` | Listado del mes; `concretaron` incluye recurrentes (`origen`) |
+| `estadisticas_leads_mes` | Conteos del mes; lista negra fuera de totales; traspaso = equipo sin `skip_followup` |
+| `listar_leads_reporte` | Listado del mes; tipo `lista_negra` aparte; `concretaron` sin bloqueados |
+| `listar_lista_negra` / `gestionar_lista_negra` | Ver / agregar / quitar `skip_followup` sin reimportar n8n |
 | `consultar_ficha_lead` | Revisar un cliente: first_touch, certificados, avisos |
 | `enviar_grafica` | PNG: `embudo_mes`, `reservas_dia` o `reservas_origen`; estilo `barras` / `pie` / `lineas` |
 

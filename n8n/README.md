@@ -72,8 +72,10 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `cancelar_seguimiento` | Cancela; pasa `tipo`: `llegada`, `comercial` o `todos` |
 | `listar_leads_potenciales` | Difusión: no reservaron, con potencial |
 | `listar_preguntan_sin_reservar` | Preguntan mucho y no cierran |
-| `estadisticas_leads_mes` | Conteos del mes: nuevos / recurrentes / **traspaso** (`team_phones`); `%` solo con clientes |
-| `listar_leads_reporte` | Listado: `concretaron` / `no_concretaron` / `traspasos` / `atendidos`. `origen`: nuevo, recurrente, traspaso, equipo, sin_cierre |
+| `estadisticas_leads_mes` | Conteos del mes: nuevos / recurrentes / **traspaso** (equipo); **lista negra fuera de todos los totales**; `%` solo con clientes |
+| `listar_leads_reporte` | Listado: `concretaron` / `no_concretaron` / `traspasos` / `lista_negra` / `atendidos`. `origen` incluye `lista_negra` |
+| `listar_lista_negra` | Teléfonos con `skip_followup=true` (sin seguimiento WhatsApp) |
+| `gestionar_lista_negra` | `agregar` / `quitar` teléfono en lista negra (BD); al agregar anula scores del lead |
 | `consultar_ficha_lead` | Ficha de un teléfono/nombre: first_touch, certificados y avisos |
 | `enviar_grafica` | Tool Workflow: dispara el 05. `embudo_mes`, `reservas_dia` o `reservas_origen`. Estilo: `barras`, `pie`, `lineas` |
 | `generar_certificado_reserva` | Tool Workflow: dispara el 06. Arma HTML (plan fijo CON DESAYUNO, fecha Caracas) → Gotenberg → PDF al chat |
