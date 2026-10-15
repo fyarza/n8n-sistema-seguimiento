@@ -103,7 +103,7 @@
     border-collapse: collapse; table-layout: fixed;
     width: 498.6pt; margin-left: 0;
   }
-  table.pay td { padding: 0 3.5pt; vertical-align: top; }
+  table.pay td { padding: 0 3.5pt; vertical-align: top; overflow: hidden; }
   table.pay thead td {
     background: #c00000; color: #fff; font-weight: 700; font-size: 14pt;
     text-align: center; vertical-align: middle; height: 39.2pt; padding-top: 1.2pt;
@@ -122,7 +122,12 @@
   table.pay tbody td.num {
     font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
     font-weight: 700; color: #000; text-align: center; padding-top: .5pt;
+    white-space: nowrap;
   }
+  /* 7-col layout (Pago móvil / Transferencia): room for Bs.S1.000.000+ */
+  table.pay.pay-c thead td { font-size: 11pt; line-height: 1.15; padding-left: 1.5pt; padding-right: 1.5pt; }
+  table.pay.pay-c tbody td { font-size: 11pt; padding-left: 1.5pt; padding-right: 1.5pt; }
+  table.pay.pay-c tbody td.num { font-size: 10.5pt; letter-spacing: -0.15pt; }
   table.pay tbody td.right { text-align: right; }
   table.pay a { color: #0000ff; }
   table.pay small { font-size: 11pt; color: #000; }

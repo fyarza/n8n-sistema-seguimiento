@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="es-VE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confirmación de reserva - Hotel Baywatch Morrocoy</title>
+<style>
+  /* Fuentes públicas en Filebrowser (Carlito es métricamente idéntica a Calibri) */
+  /* ascent/descent-override: reproduce el reparto de interlineado de Word/LibreOffice (línea base a 0.75em del borde superior) */
+  @font-face { font-family: "Carlito"; font-weight: 400; src: url("https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/RdBXSDd-/Carlito-Regular.ttf") format("truetype");
+               ascent-override: 75%; descent-override: 47.07%; line-gap-override: 0%; }
+  @font-face { font-family: "Carlito"; font-weight: 700; src: url("https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/RdBXSDd-/Carlito-Bold.ttf") format("truetype");
+               ascent-override: 75%; descent-override: 47.07%; line-gap-override: 0%; }
+  @font-face { font-family: "Liberation Sans"; font-weight: 700; src: url("https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/RdBXSDd-/LiberationSans-Bold.ttf") format("truetype"); }
+
+  @page { size: 612pt 792pt; margin: 0; }
+
+  * { box-sizing: border-box; }
+  html { background: #8a8d91; }
+  body {
+    margin: 0;
+    font-family: "Carlito", Calibri, sans-serif;
+    font-size: 12pt;
+    line-height: 1.2207;
+    color: #000;
+    font-kerning: none;
+    text-rendering: geometricPrecision;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  p, ol, ul { margin: 0; padding: 0; }
+  b { font-weight: 700; }
+
+  /* ---------- Hoja Carta (8.5 x 11 in) ---------- */
+  .page {
+    position: relative;
+    width: 612pt;
+    height: 792pt;
+    margin: 18px auto;
+    background: #fff;
+    overflow: hidden;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, .35);
+    break-after: page;
+    page-break-after: always;
+  }
+  .page:last-child { break-after: auto; page-break-after: auto; }
+  @media print {
+    html { background: none; }
+    .page { margin: 0; box-shadow: none; }
+  }
+
+  /* ---------- Encabezado / pie / marca de agua (se repiten en cada hoja) ---------- */
+  .watermark { position: absolute; left: 85.4pt; top: 282.6pt; width: 441.1pt; height: 177.7pt; z-index: 0; }
+  .logo      { position: absolute; left: 27.9pt;  top: 21.7pt;  width: 118.5pt; height: 47.25pt; z-index: 1; }
+  .rif {
+    position: absolute; right: 113.3pt; top: 52.7pt; z-index: 1;
+    font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
+    font-weight: 700; font-size: 11pt; white-space: nowrap;
+  }
+  .footer { position: absolute; left: 0; right: 0; top: 687.2pt; z-index: 1; text-align: center; font-size: 11pt; }
+  .footer-line { position: absolute; left: 56.7pt; width: 498.6pt; top: 1pt; height: 3pt; background: #ff0000; }
+  .footer-text { position: absolute; left: 0; right: 0; top: 10pt; }
+  .footer a { color: inherit; text-decoration: none; font-weight: 700; }
+
+  /* ---------- Área de contenido ---------- */
+  .content { position: absolute; left: 56.8pt; top: 77pt; width: 498.5pt; z-index: 1; }
+  .nb { display: inline-block; white-space: nowrap; }
+  .j { text-align: justify; margin-right: -2.6pt; }
+  /* Línea que cierra justificada antes de un salto forzado (replica el corte de línea del original) */
+  .jl { display: block; text-align: justify; text-align-last: justify; }
+  .indent { margin-left: 18pt; }
+  .c { text-align: center; }
+  .red { color: #c00000; }
+  .navy { color: #002060; }
+  .u { text-decoration: underline; }
+  .s10 { font-size: 10.5pt; }
+  .s11 { font-size: 11pt; }
+  .s12 { font-size: 12pt; }
+  .s14 { font-size: 14pt; }
+  .s16 { font-size: 16pt; }
+  .s18 { font-size: 18pt; }
+  .gap12 { height: 14.65pt; }
+  .gap18 { height: 21.97pt; }
+  .gap105 { height: 12.8pt; }
+
+  /* Viñeta ➢ dibujada en SVG para que no dependa de la fuente del sistema */
+  .bullets { list-style: none; }
+  .bullets li { position: relative; padding-left: 18pt; }
+  .bullets li::before {
+    content: ""; position: absolute; left: 0; top: .02em; left: .08em; width: .67em; height: .77em;
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 144 168' preserveAspectRatio='none'><polygon points='4,5 140,83 52,83' fill='white' stroke='black' stroke-width='8'/><polygon points='52,83 144,83 0,168' fill='black'/></svg>") no-repeat center / 100% 100%;
+  }
+
+  /* ---------- Página 1 ---------- */
+  .re { position: relative; height: 14.65pt; }
+  .re .tag { position: absolute; left: 283.2pt; top: 0; font-weight: 700; white-space: nowrap; }
+  .intro { text-indent: 18pt; }
+  .total { margin-left: 36pt; font-weight: 700; font-size: 18pt; }
+  .paid { font-size: 18pt; font-weight: 700; }
+  .bullets li.sm::before { font-size: 12pt; top: .161em; }
+
+  table.pay {
+    border-collapse: collapse; table-layout: fixed;
+    width: 498.6pt; margin-left: 0;
+  }
+  table.pay td { padding: 0 3.5pt; vertical-align: top; overflow: hidden; }
+  table.pay thead td {
+    background: #c00000; color: #fff; font-weight: 700; font-size: 14pt;
+    text-align: center; vertical-align: middle; height: 39.2pt; padding-top: 1.2pt;
+    border-right: .5pt solid #000; border-bottom: .5pt solid #000; border-top: 0;
+  }
+  table.pay thead td.arial {
+    padding-top: 0;
+    font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
+    border-top: 1pt solid #000; border-bottom: 1pt solid #000;
+  }
+  table.pay thead td.arial span { font-family: "Carlito", Calibri, sans-serif; }
+  table.pay tbody td {
+    height: 18.9pt; padding-top: 1.6pt; font-size: 14pt; color: #222;
+    border-right: .5pt solid #000; border-bottom: .5pt solid #000;
+  }
+  table.pay tbody td.num {
+    font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
+    font-weight: 700; color: #000; text-align: center; padding-top: .5pt;
+    white-space: nowrap;
+  }
+  /* 7-col layout (Pago móvil / Transferencia): smaller type + wrap so labels/refs/amounts fit */
+  table.pay.pay-c thead td { font-size: 10pt; line-height: 1.15; padding-left: 1.5pt; padding-right: 1.5pt; }
+  table.pay.pay-c tbody td {
+    font-size: 9pt; line-height: 1.2; padding-left: 1.5pt; padding-right: 1.5pt;
+    height: auto; min-height: 18.9pt; padding-bottom: 2pt;
+    white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+  }
+  /* Amounts: normal weight + nowrap; same 9pt as the rest of the row */
+  table.pay.pay-c tbody td.num {
+    font-family: "Carlito", Calibri, sans-serif;
+    font-weight: 400;
+    font-size: 9pt;
+    letter-spacing: -0.25pt;
+    white-space: nowrap;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+  table.pay tbody td.right { text-align: right; }
+  table.pay a { color: #0000ff; }
+  table.pay small { font-size: 11pt; color: #000; }
+
+  .sign b { font-size: 14pt; display: block; }
+
+  /* ---------- Páginas 2 y 3 ---------- */
+  .title { font-size: 16pt; font-weight: 700; color: #c00000; text-align: center; }
+  .title span { text-decoration: underline; text-decoration-thickness: 1.6pt; text-underline-offset: 1.6pt; }
+  .row { display: flex; align-items: baseline; }
+  .row > .n { flex: none; }
+  .row > .t { flex: 1; min-width: 0; }
+  .n18 > .n { width: 18pt; }
+  .l15 { line-height: 14.7pt; position: relative; top: -.94pt; }
+  .pol { font-size: 10.5pt; }
+  .pol .sub { margin-left: 18pt; }
+  .sub-a > .n { width: 18pt; }
+  .head12 { font-size: 12pt; font-weight: 700; }
+	</style>
+</head>
+<body>
+
+<!-- ===================== HOJA 1 ===================== -->
+<section class="page">
+  <img class="watermark" src="https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/8OmTI_yS/marca-agua.gif" alt="">
+  <img class="logo" src="https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/8OmTI_yS/logo-hotel.png" alt="Hotel Baywatch Morrocoy">
+  <div class="rif">RIF: J-40127303-3</div>
+
+  <div class="content">
+    <p style="text-align:right;font-weight:700">Tucacas, 14 de Octubre de 2026</p>
+    <p>Ciudadano(a):</p>
+    <p class="s14" style="font-weight:700">EVELIN YARZA</p>
+    <p class="s14" style="font-weight:700">V-12.523.161</p>
+    <div class="re">Presente.<span class="tag">RE: <span class="u">CONFIRMACIÓN DE RESERVA</span></span></div>
+    <div class="gap12"></div>
+    <p class="j intro">El Hotel Baywatch Morrocoy, C.A., se complace en darle la bienvenida a nuestras instalaciones. Para nosotros es un honor recibirlo y atenderlo. A continuación pasamos a desglosar los datos de su Reservación:</p>
+
+    <ul class="bullets s14">
+      <li><b>Plan: CON DESAYUNO </b></li>
+      <li><b>PAX. 6</b></li>
+      <li>Duración: <b>3 NOCHES Y 4 DIAS </b></li>
+      <li>Check In: 3:00 pm Fecha: <b>17/10/2026</b></li>
+      <li>Check Out: 1:00 pm Fecha: <b>20/10/2026</b></li>
+      <li>Tipo(s) de Habitación(es): <b>1 MATRIMONIAL DELUX VISTA AL MAR Y 1 DOBLE DELUX </b></li>
+      <li class="sm">Destino: Tucacas, Edo. Falcón, Parque Nacional Morrocoy</li>
+</ul>
+
+    <div class="gap12" style="height:13.75pt"></div>
+    <p class="total">Monto Total de Hospedaje: €1.548</p>
+    <div class="gap18" style="height:22.5pt"></div>
+
+    
+    <table class="pay pay-c">
+      <colgroup>
+        <col style="width:76pt"><col style="width:36pt"><col style="width:68pt"><col style="width:64pt"><col style="width:62pt"><col style="width:118pt"><col style="width:74.6pt">
+      </colgroup>
+      <thead>
+        <tr>
+          <td>Forma de pago</td>
+          <td>Fecha</td>
+          <td>Cuenta</td>
+          <td class="arial">Ref. / Titular</td>
+          <td class="arial">Tasa €</td>
+          <td class="arial">Monto Bs.</td>
+          <td class="arial">Monto <span>€</span></td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>PAGO MOVIL</td>
+          <td class="right">14-oct</td>
+          <td><a href="#">BANESCO</a></td>
+          <td>673546</td>
+          <td class="num">Bs.S982,71</td>
+          <td class="num">Bs.S912.937,59</td>
+          <td class="num">€ 929</td>
+        </tr>
+        <tr>
+          <td>TRANSFERENCIA</td>
+          <td class="right">15-oct</td>
+          <td><a href="#">BANCO BANESCO</a></td>
+          <td>9988776655</td>
+          <td class="num">Bs.S985,40</td>
+          <td class="num">Bs.S1.500.000,00</td>
+          <td class="num">€ 1.522,07</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="gap18"></div>
+    <ul class="bullets paid"><li>Monto Pagado: €2.451,07 (ABONO (SALDO PENDIENTE 619 EUR))</li></ul>
+    <div class="gap12"></div>
+
+    <p class="j"><span class="jl"><b>NOTA:</b> Favor presentar este documento al momento de su entrada al Hotel. Igualmente es</span><span class="jl" style="text-align-last:auto">importante tener en cuenta <b>NUESTRA POLITICAS</b> anexadas en el presente certificado.</span>Esperando que su estadía sea placentera y que disfrute al máximo de nuestras instalaciones.</p>
+    <div class="gap12"></div>
+
+    <div class="c sign">
+      <b>EVELIN YARZA</b>
+      <b class="navy">EJECUTIVA DE VENTAS</b>
+      <b class="navy">0424 473 3047</b>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-text">
+      Carretera Nacional Morón-Coro, Km. 61, Sector Bomba H, Tucacas, Edo. Falcón, Venezuela<br>
+      Teléfonos:<b> 0259-4145015 // 0242-6880642 // 0242-6880644 // 0242 6880645</b><br>
+      <a href="http://www.hotelbaywatch.com/">www.hotelbaywatch.com</a> / <a href="mailto:reservaciones@hotelbaywatch.com">reservaciones@hotelbaywatch.com</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA 2 ===================== -->
+<section class="page">
+  <img class="watermark" src="https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/8OmTI_yS/marca-agua.gif" alt="">
+  <img class="logo" src="https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/8OmTI_yS/logo-hotel.png" alt="Hotel Baywatch Morrocoy">
+  <div class="rif">RIF: J-40127303-3</div>
+
+  <div class="content pol">
+    <p class="title"><span>IMPORTANTE: POLÍTICAS DEL HOTEL</span></p>
+
+    <div class="row n18 j"><div class="n">1.</div><div class="t"><b class="s12">TODOS <span class="nb">LOS HUÉSPEDES EN COMPAÑÍA DE</span> MENORES DE <span class="nb"><span>EDAD,</span></span></b><span class="nb">&nbsp;deberá presentar</span> el respectivo documento que certifique la identidad del mismo, y de no ser familiares del primer grado de consanguinidad, deberán presentar un permiso de autorización de los padres validado por la Ley Orgánica para la Protección de Niños, Niñas y Adolescentes (LOPNA).</div></div>
+
+    <div class="row n18 s12"><div class="n">2.</div><div class="t"><b>EARLY CHECK IN- Entrada antes de Hora</b></div></div>
+    <p class="j indent l15"><span class="jl">Todo ingreso antes de las 3:00 p.m. generará un cargo extra de EARLY CHECK – IN por un monto</span><span class="jl" style="text-align-last:auto">correspondiente a la mitad de la tarifa de reserva por noche, todo Early Check in está sujeto a disponibilidad.</span></p>
+
+    <div class="row n18 s12"><div class="n"><b>3.</b></div><div class="t"><b>LATE CHECK OUT- Salida tardía</b></div></div>
+    <p class="j indent l15" style="margin-top:2.2pt">La salida de las habitaciones es hasta la 1:00 p.m. Toda salida luego de esa hora que no corresponda a Tour Operador generara LATE CHECK OUT, correspondiente a la mitad de la tarifa de reserva por noche. En caso de que esta salida sea luego de las 6:00 pm el huésped deberá pagar la totalidad completa de la noche. Todo Late Check-Out está sujeto a disponibilidad.</p>
+
+    <div class="row n18 j"><div class="n">4.</div><div class="t">Toda reserva en <b class="s14">TEMPORADA BAJA</b>, se debe <b class="s14">pagar el 60%</b> <span class="s14"></span>para confirmar su apartado y con el resto del pago total al realizar el CHECK-IN</div></div>
+    <div class="row n18 j"><div class="n">5.</div><div class="t">Toda reserva en <b class="s14">TEMPORADA ALTA</b>, se debe <b class="s14">pagar el 100%</b> para confirmar la misma. </div></div>
+    <div class="row n18 j"><div class="n"><b>6.</b></div><div class="t">Todos nuestros clientes pueden utilizar los mecanismos de pagos por Efectivo ($) para realizar nuestras reservas, mediante las unidades bancarias (BANESCO, BANCA AMIGA y OFICINA DE VALENCIA.</div></div>
+
+    <div class="row n18 j"><div class="n"><b>7.</b></div><div class="t"><b><span class="jl">SE RESALTA LO SIGUIENTE: EN LOS CASOS POR DETERIODOS O MACHADOS DE TOALLAS, LENCERÍAS Y ORINE DE COLCHÓN (CASO ADULTOS) Y PÉRDIDA DE LLAVE DE HABITACIÓN: EL HUESPEDE DEBE PAGAR EL MISMO</span><span class="jl" style="text-align-last:auto">DE ACUERDO AL CASO:</span></b></div></div>
+    <div class="sub" style="margin-left:24.5pt;font-weight:700">
+      <div class="row sub-a j"><div class="n">a.</div><div class="t">Toalla Corporal: 20$</div></div>
+      <div class="row sub-a j"><div class="n">b.</div><div class="t">Lencerías: 50$</div></div>
+      <div class="row sub-a j"><div class="n">c.</div><div class="t">Colchón Orinado por adulto: 80$. ( esto aplica realizar un bloqueo de la habitación efectada de por lo menos 72hrs) más el lavado y mantenimiento del mismo.</div></div>
+      <div class="row sub-a j"><div class="n">d.</div><div class="t">Llave de habitación sencilla: 10$.</div></div>
+    </div>
+
+    <div class="row n18 s14"><div class="n"><b>8.</b></div><div class="t"><b>CANCELACIÓN DE RESERVAS:</b></div></div>
+    <div class="s11" style="font-weight:700">
+      <div class="row n18 j"><div class="n">a.</div><div class="t">Las solicitudes de cancelación de reservas deben ser informadas por escrito (vía correo electrónico).</div></div>
+      <div class="row n18 j"><div class="n">b.</div><div class="t">&nbsp;Reservas canceladas 48 Horas (2 días) antes o más a la fecha y hora de su Check in (3:00 p.m.), no se aplicará penalización por cancelación de reserva.</div></div>
+      <div class="row n18 j"><div class="n">c.</div><div class="t">Reservas canceladas después de pasadas las 48 horas (2 días) o menos a la fecha y hora de su Check in (3.00 p.m.) se aplicará penalización por el valor de una noche. En el caso de que haya abonado más de una (1) noche, se le otorgará una nota de crédito por un lapso de tres (3) meses continuos a partir de la fecha de cancelación de la reserva, para disfrutar del monto a favor, tomando en cuenta que el crédito estará sujeto a disponibilidad y tarifas vigentes.</div></div>
+    </div>
+
+    <div class="row n18 s12"><div class="n"><b>9.</b></div><div class="t"><b>RETIRO ANTES DE LA FECHA DE SALIDA:&nbsp;</b></div></div>
+    <p class="j indent">Si el cliente se retira antes de completar la estadía se le facturarán los cargos consumidos hasta la fecha más la noche del día en que se está retirando. En caso de restar noches a su favor, se le otorgará una nota de crédito por el monto restante, válida por un lapso de 3 meses continuos a partir de la fecha de retiro para el uso de la misma, tomando en cuenta que el crédito estará sujeto a disponibilidad y tarifas vigentes.</p>
+
+    <div class="row n18 s12"><div class="n"><b>10.</b></div><div class="t"><b>NO SHOW:</b></div></div>
+    <div class="row j" style="margin-left:21.3pt"><div class="n" style="width:18pt">a.</div><div class="t">Clientes No Show, es considerado al individuo que no se presenta a la fecha del Check in. En caso de no presentarse, el cliente pierde automáticamente una noche.</div></div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-text">
+      Carretera Nacional Morón-Coro, Km. 61, Sector Bomba H, Tucacas, Edo. Falcón, Venezuela<br>
+      Teléfonos:<b> 0259-4145015 // 0242-6880642 // 0242-6880644 // 0242 6880645</b><br>
+      <a href="http://www.hotelbaywatch.com/">www.hotelbaywatch.com</a> / <a href="mailto:reservaciones@hotelbaywatch.com">reservaciones@hotelbaywatch.com</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA 3 ===================== -->
+<section class="page">
+  <img class="watermark" src="https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/8OmTI_yS/marca-agua.gif" alt="">
+  <img class="logo" src="https://test-filebrowser.i3clpy.easypanel.host/api/public/dl/8OmTI_yS/logo-hotel.png" alt="Hotel Baywatch Morrocoy">
+  <div class="rif">RIF: J-40127303-3</div>
+
+  <div class="content pol">
+    <div class="row j" style="margin-left:21.3pt"><div class="n" style="width:18pt">b.</div><div class="t">En caso de que tenga más de una noche reservada y desee utilizarlas a partir del día siguiente, debe notificar vía correo electrónico antes de las 10:00 a.m. del día siguiente al Check in. Si el&nbsp; cliente&nbsp; no notifica que se presentará antes de la hora mencionada, el Hotel podrá disponer de la habitación y no se le garantizará disponibilidad. En caso de restar noches a su favor, se le otorgará una nota de crédito por el monto restante, válida por un lapso de 3 meses continuos a partir de la fecha del No Show para el uso de la misma, tomando en cuenta que el crédito estará sujeto a disponibilidad y tarifas vigentes.</div></div>
+
+    <div class="row red s16" style="font-weight:700"><div class="n" style="width:35.4pt">11.</div><div class="t">NO SE REALIZA REEMBOLSO DE DINERO, SIN EXCEPCIÓN.</div></div>
+
+    <div style="height:25.7pt"></div>
+    <p class="title indent">POLÍTICAS DE ACCESO A MASCOTAS</p>
+    <p class="title indent">COSTO: USD 25 POR NOCHE</p>
+    <div class="gap105"></div>
+
+    <p class="head12 indent">CARGO POR LIMPIEZA</p>
+    <p class="j indent">Por favor tome en cuenta que se le hará un cargo no reembolsable diarios lo cual se le cobrara al momento del check in por concepto de limpieza especial y necesaria para preparar la habitación para el siguiente huésped. Si fuese requerido fumigar la habitación debido a una infestación un cargo adicional pudiese aplicar.</p>
+    <div class="gap105"></div>
+
+    <p class="head12 indent">MASCOTAS ACEPTADAS</p>
+    <p class="j indent">Son bienvenidos perros de hasta 10 kilos (Raza Pequeña) y gatos. Nos reservamos el derecho de requerir que la mascota se retire si se comprueba que es peligrosa o con un comportamiento inaceptable (Mordeduras, ruido excesivo como ladridos, evidencia de que se encuentre enferma la mascota, o que se esté orinando o defecando en áreas públicas. No aceptamos más de 1 mascota</p>
+    <p class="j indent">por habitación. El huésped es responsable por los cargos relacionados si es necesario que se retire la mascota.</p>
+    <div class="gap105"></div>
+
+    <p class="head12 indent">AREAS PERMITIDAS PARA LA MASCOTA</p>
+    <p class="j indent"><span class="jl">Las mascotas son solo permitidas dentro de la habitación y lobby. Deberán transitar con correa, kennel o</span><span class="jl" style="text-align-last:auto">cargada en brazos en las áreas comunes del hotel. No se permite en el area de piscina. </span></p>
+    <div class="gap105"></div>
+
+    <p class="head12 indent">LIMPIEZA DE LA HABITACIÓN </p>
+    <p class="j indent">Para su seguridad y comodidad de su mascota, el departamento de Ama de llaves podrá entrar en su habitación solo si: (a) Su mascota no está presente o (b) Usted está presente y puede monitorear su mascota o (c) La mascota está en su kennel.</p>
+    <div class="gap105"></div>
+
+    <p class="head12 indent">DAÑO EN LA HABITACIÓN O AREAS COMUNES</p>
+    <p class="j indent">La cuenta de hotel pudiese ser cargada por reparación o costos de reemplazo por cualquier daño causado por su mascota.</p>
+    <div class="gap105"></div>
+
+    <p class="j indent" style="font-weight:700">De igual forma habitaciones DISPONIBLES PARA para&nbsp; el uso de los caninos qué deseen pernotar en nuestras instalaciones son las siguientes: <br>Habitacion 126: Triple Deluxe <br>Habitacion 526: Triple Deluxe <br>Habitacion 603: Matrimonial Estándar.</p>
+  </div>
+
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-text">
+      Carretera Nacional Morón-Coro, Km. 61, Sector Bomba H, Tucacas, Edo. Falcón, Venezuela<br>
+      Teléfonos:<b> 0259-4145015 // 0242-6880642 // 0242-6880644 // 0242 6880645</b><br>
+      <a href="http://www.hotelbaywatch.com/">www.hotelbaywatch.com</a> / <a href="mailto:reservaciones@hotelbaywatch.com">reservaciones@hotelbaywatch.com</a>
+    </div>
+</div>
+</section>
+
+</body>
+</html>

@@ -62,6 +62,49 @@ export function formatFechaEmision(date = new Date(), timeZone = DEFAULTS.timezo
   return `Tucacas, ${day} de ${MESES[monthNum - 1]} de ${year}`;
 }
 
+/** Commercial-style stamp: 03-10-2026_14-30 (America/Caracas). */
+export function formatFilenameStamp(date = new Date(), timeZone = DEFAULTS.timezone) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type, fallback = '00') => parts.find((p) => p.type === type)?.value || fallback;
+  const day = get('day', '01');
+  const month = get('month', '01');
+  const year = get('year', '2026');
+  let hour = get('hour', '00');
+  if (hour === '24') hour = '00';
+  const minute = get('minute', '00');
+  return `${day}-${month}-${year}_${hour}-${minute}`;
+}
+
+function sanitizeFilenamePart(s) {
+  return String(s ?? '')
+    .normalize('NFC')
+    .replace(/[\/\\:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+/** Matches commercial files: CERTIFICADO DE RESERVA DE {NOMBRE} {DD-MM-YYYY_HH-mm}--{FIRMANTE}.pdf */
+export function buildCertificadoFilename(
+  nombre,
+  firmanteNombre = DEFAULTS.firmante_nombre,
+  date = new Date(),
+  timeZone = DEFAULTS.timezone,
+) {
+  const guest = sanitizeFilenamePart(nombre);
+  const signer = sanitizeFilenamePart(firmanteNombre);
+  const stamp = formatFilenameStamp(date, timeZone);
+  return `CERTIFICADO DE RESERVA DE ${guest} ${stamp}--${signer}.pdf`;
+}
+
 export function parseIsoDate(iso) {
   const m = String(iso || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) throw new Error(`Fecha inválida (YYYY-MM-DD): ${iso}`);
@@ -98,6 +141,19 @@ export function formatBs(n) {
   const raw = String(n ?? '').trim();
   if (!raw) return '';
   if (/bs\.?\s*s/i.test(raw)) return raw.replace(/\s+/g, '');
+  // Already Venezuelan-formatted (e.g. 1.234.567,89 / 912.937,59 / 973,93)
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(raw) || /^\d{1,3},\d+$/.test(raw)) {
+    return `Bs.S${raw}`;
+  }
+  let num = NaN;
+  if (/^\d+(\.\d+)?$/.test(raw)) num = Number(raw); // US / plain
+  else if (/^\d+,\d+$/.test(raw)) num = Number(raw.replace(',', '.')); // decimal comma, no thousands
+  if (Number.isFinite(num)) {
+    return `Bs.S${num.toLocaleString('es-VE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
   return `Bs.S${raw}`;
 }
 
@@ -190,10 +246,11 @@ function renderTableC(rows) {
           <td class="num">${escapeHtml(formatBs(r.monto_bs))}</td>
           <td class="num">${escapeHtml(formatEur(r.monto_eur))}</td>
         </tr>`).join('');
+  // Wider "Monto Bs." (~128pt) so amounts ≥ Bs.S1.000.000 do not collide with Tasa / Monto €
   return `
-    <table class="pay">
+    <table class="pay pay-c">
       <colgroup>
-        <col style="width:78pt"><col style="width:48pt"><col style="width:90pt"><col style="width:72pt"><col style="width:70pt"><col style="width:78pt"><col style="width:62pt">
+        <col style="width:76pt"><col style="width:36pt"><col style="width:68pt"><col style="width:64pt"><col style="width:62pt"><col style="width:118pt"><col style="width:74.6pt">
       </colgroup>
       <thead>
         <tr>
@@ -247,7 +304,14 @@ export function renderCertificado(input, templateHtml) {
   if (!Number.isFinite(montoTotal)) throw new Error('monto_total_eur inválido');
 
   const duracion = durationLabel(checkIn, checkOut);
-  const fechaEmision = formatFechaEmision(input.now ? new Date(input.now) : new Date(), cfg.timezone);
+  const emittedAt = input.now ? new Date(input.now) : new Date();
+  const fechaEmision = formatFechaEmision(emittedAt, cfg.timezone);
+  const filename = buildCertificadoFilename(
+    nombre,
+    cfg.firmante_nombre,
+    emittedAt,
+    cfg.timezone,
+  );
   const montoTotalLabel = formatEur(montoTotal, { spaced: false });
   const pagadoSum = Array.isArray(pagos)
     ? pagos.reduce((s, r) => s + Number(r.monto_eur || 0), 0)
@@ -289,7 +353,7 @@ export function renderCertificado(input, templateHtml) {
       check_out: checkOut,
       duracion,
       fecha_emision: fechaEmision,
-      filename: `certificado-${nombre.replace(/\s+/g, '-').toLowerCase()}-${checkIn}.pdf`,
+      filename,
     },
   };
 }
