@@ -102,6 +102,8 @@
   table.pay {
     border-collapse: collapse; table-layout: fixed;
     width: 498.6pt; margin-left: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   table.pay td { padding: 0 3.5pt; vertical-align: top; overflow: hidden; }
   table.pay thead td {
@@ -118,6 +120,10 @@
   table.pay tbody td {
     height: 18.9pt; padding-top: 1.6pt; font-size: 14pt; color: #222;
     border-right: .5pt solid #000; border-bottom: .5pt solid #000;
+    /* Solid fill so watermark does not wash out payment amounts */
+    background: #e8e8e8;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   table.pay tbody td.num {
     font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
@@ -131,10 +137,10 @@
     height: auto; min-height: 18.9pt; padding-bottom: 2pt;
     white-space: normal; word-break: break-word; overflow-wrap: anywhere;
   }
-  /* Amounts: normal weight + nowrap; same 9pt as the rest of the row */
+  /* Amounts: bold + nowrap; 9pt keeps high Bs. values readable */
   table.pay.pay-c tbody td.num {
     font-family: "Carlito", Calibri, sans-serif;
-    font-weight: 400;
+    font-weight: 700;
     font-size: 9pt;
     letter-spacing: -0.25pt;
     white-space: nowrap;
@@ -184,7 +190,7 @@
       <li>Duración: <b>3 NOCHES Y 4 DIAS </b></li>
       <li>Check In: 3:00 pm Fecha: <b>17/10/2026</b></li>
       <li>Check Out: 1:00 pm Fecha: <b>20/10/2026</b></li>
-      <li>Tipo(s) de Habitación(es): <b>1 MATRIMONIAL DELUX VISTA AL MAR Y 1 DOBLE DELUX </b></li>
+      <li>Tipo(s) de Habitación(es): <b>1 MATRIMONIAL DELUX </b></li>
       <li class="sm">Destino: Tucacas, Edo. Falcón, Parque Nacional Morrocoy</li>
 </ul>
 
@@ -218,20 +224,11 @@
           <td class="num">Bs.S912.937,59</td>
           <td class="num">€ 929</td>
         </tr>
-        <tr>
-          <td>TRANSFERENCIA</td>
-          <td class="right">15-oct</td>
-          <td><a href="#">BANCO BANESCO</a></td>
-          <td>9988776655</td>
-          <td class="num">Bs.S985,40</td>
-          <td class="num">Bs.S1.500.000,00</td>
-          <td class="num">€ 1.522,07</td>
-        </tr>
       </tbody>
     </table>
 
     <div class="gap18"></div>
-    <ul class="bullets paid"><li>Monto Pagado: €2.451,07 (ABONO (SALDO PENDIENTE 619 EUR))</li></ul>
+    <ul class="bullets paid"><li>Monto Pagado: €929 (ABONO)</li></ul>
     <div class="gap12"></div>
 
     <p class="j"><span class="jl"><b>NOTA:</b> Favor presentar este documento al momento de su entrada al Hotel. Igualmente es</span><span class="jl" style="text-align-last:auto">importante tener en cuenta <b>NUESTRA POLITICAS</b> anexadas en el presente certificado.</span>Esperando que su estadía sea placentera y que disfrute al máximo de nuestras instalaciones.</p>

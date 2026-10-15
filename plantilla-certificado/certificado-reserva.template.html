@@ -102,6 +102,8 @@
   table.pay {
     border-collapse: collapse; table-layout: fixed;
     width: 498.6pt; margin-left: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   table.pay td { padding: 0 3.5pt; vertical-align: top; overflow: hidden; }
   table.pay thead td {
@@ -118,6 +120,10 @@
   table.pay tbody td {
     height: 18.9pt; padding-top: 1.6pt; font-size: 14pt; color: #222;
     border-right: .5pt solid #000; border-bottom: .5pt solid #000;
+    /* Solid fill so watermark does not wash out payment amounts */
+    background: #e8e8e8;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   table.pay tbody td.num {
     font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
@@ -131,10 +137,10 @@
     height: auto; min-height: 18.9pt; padding-bottom: 2pt;
     white-space: normal; word-break: break-word; overflow-wrap: anywhere;
   }
-  /* Amounts: normal weight + nowrap; same 9pt as the rest of the row */
+  /* Amounts: bold + nowrap; 9pt keeps high Bs. values readable */
   table.pay.pay-c tbody td.num {
     font-family: "Carlito", Calibri, sans-serif;
-    font-weight: 400;
+    font-weight: 700;
     font-size: 9pt;
     letter-spacing: -0.25pt;
     white-space: nowrap;
