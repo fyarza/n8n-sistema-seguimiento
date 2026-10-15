@@ -130,12 +130,15 @@ CREATE INDEX IF NOT EXISTS idx_lead_score_lead_time
 
 -- Números del equipo de ventas / traspaso interno (no son captación del chat).
 -- Mantener con INSERT/UPDATE; los reportes excluyen active=true del % de conversión.
+-- skip_followup=true = lista negra del flujo 03 (guarda mensaje, sin Docling/LLM/score).
+-- Agregar números a la lista negra: solo BD, sin reimportar n8n.
 CREATE TABLE IF NOT EXISTS team_phones (
   id BIGSERIAL PRIMARY KEY,
   phone TEXT NOT NULL,
   name TEXT NOT NULL DEFAULT '',
   team_tag TEXT NOT NULL DEFAULT 'equipo_ventas',
   active BOOLEAN NOT NULL DEFAULT true,
+  skip_followup BOOLEAN NOT NULL DEFAULT false,
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -143,23 +146,48 @@ CREATE TABLE IF NOT EXISTS team_phones (
   UNIQUE (phone)
 );
 
+ALTER TABLE team_phones
+  ADD COLUMN IF NOT EXISTS skip_followup BOOLEAN NOT NULL DEFAULT false;
+
 CREATE INDEX IF NOT EXISTS idx_team_phones_active
   ON team_phones (phone)
   WHERE active;
 
--- Seed confirmado (nombre + número). ON CONFLICT actualiza nombre/tag si re-ejecutas.
-INSERT INTO team_phones (phone, name, team_tag, notes) VALUES
-  ('584127425397', 'Yoly Cuicas', 'equipo_ventas', 'Baywatch Reservas / traspasos'),
-  ('584244208619', 'Yenny Morales', 'equipo_ventas', 'Hotel Baywatch Morrocoy'),
-  ('584144355578', 'Clismary Orasma', 'equipo_ventas', NULL),
-  ('584244739618', 'Relvis Olivares', 'equipo_ventas', NULL),
-  ('584126470732', 'Jesus Gallardo', 'equipo_ventas', NULL),
-  ('584144026889', 'Darwin Brett', 'equipo_ventas', 'A menudo alias Evelin Yarza en WhatsApp'),
-  ('584244676361', 'Jeannie Barrolleta', 'equipo_ventas', NULL),
-  ('584144202819', 'Danielys Polanco', 'equipo_ventas', NULL)
+CREATE INDEX IF NOT EXISTS idx_team_phones_skip_followup
+  ON team_phones (phone)
+  WHERE active AND skip_followup;
+
+-- Seed confirmado (nombre + número). ON CONFLICT actualiza nombre/tag/lista negra si re-ejecutas.
+INSERT INTO team_phones (phone, name, team_tag, skip_followup, notes) VALUES
+  ('584127425397', 'Yoly Cuicas', 'equipo_ventas', false, 'Baywatch Reservas / traspasos'),
+  ('584244208619', 'Yenny Morales', 'equipo_ventas', false, 'Hotel Baywatch Morrocoy'),
+  ('584144355578', 'Clismary Orasma', 'equipo_ventas', false, NULL),
+  ('584244739618', 'Relvis Olivares', 'equipo_ventas', false, NULL),
+  ('584126470732', 'Jesus Gallardo', 'equipo_ventas', false, NULL),
+  ('584144026889', 'Darwin Brett', 'equipo_ventas', false, 'A menudo alias Evelin Yarza en WhatsApp'),
+  ('584244676361', 'Jeannie Barrolleta', 'equipo_ventas', false, NULL),
+  ('584144202819', 'Danielys Polanco', 'equipo_ventas', false, NULL),
+  ('584124067967', 'Federico Yarza', 'desarrollo', true, 'Lista negra WhatsApp: pruebas / no es cliente')
 ON CONFLICT (phone) DO UPDATE SET
   name = EXCLUDED.name,
   team_tag = EXCLUDED.team_tag,
+  skip_followup = EXCLUDED.skip_followup,
   notes = COALESCE(EXCLUDED.notes, team_phones.notes),
   active = true,
   updated_at = now();
+
+-- Undo false client scoring when internal numbers were treated as leads.
+UPDATE leads SET
+  stage = 'en_proceso',
+  score_potencial = 0,
+  score_engagement = 0,
+  score_cierre = 0,
+  score_silencio = 0,
+  last_reason = 'Numero interno (team_phones): score anulado',
+  updated_at = now()
+WHERE phone = '584124067967'
+  AND (
+    stage = 'concreto'
+    OR score_cierre > 0
+    OR COALESCE(last_reason, '') ILIKE '%certificado%'
+  );

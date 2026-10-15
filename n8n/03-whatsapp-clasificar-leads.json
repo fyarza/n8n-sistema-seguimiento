@@ -1,25 +1,20 @@
 {
   "name": "Seguimientos: WhatsApp clasificar leads",
-  "active": false,
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "America/Caracas"
-  },
   "nodes": [
     {
       "parameters": {
-        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. Speaches audio: `https://test-speaches.i3clpy.easypanel.host` + Bearer `PEGAR_SPEACHES_API_KEY`.\n4. Docling certificados: `https://test-docling.i3clpy.easypanel.host` + `X-Api-Key: PEGAR_DOCLING_API_KEY`.\n5. Webhook Evolution path: `seguimientos-leads`.\n6. Guarda ambos lados. Clasifica texto, audios e imágenes del cliente; lee PDF certificado de la asesora.\n7. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n8. `pago` (imagen) o certificado Docling → `concreto`. Fallos de media no tumban el flujo.\n\nParams LLM (prod): Filtro maxTokens=2024 timeout=20s; Clasificar=3024; Vision=3048.",
-        "height": 580,
+        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. Speaches audio: `https://test-speaches.i3clpy.easypanel.host` + Bearer `PEGAR_SPEACHES_API_KEY`.\n4. Docling certificados: `https://test-docling.i3clpy.easypanel.host` + `X-Api-Key: PEGAR_DOCLING_API_KEY`.\n5. Webhook Evolution path: `seguimientos-leads`.\n6. Guarda ambos lados. Clasifica texto, audios e imágenes del cliente; lee PDF certificado de la asesora.\n7. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n8. `pago` (imagen) o certificado Docling → `concreto`. Fallos de media no tumban el flujo.\n\nParams LLM (prod): Filtro maxTokens=2024 timeout=20s; Clasificar=3024; Vision=3048.\n9. Lista negra WhatsApp: `team_phones.skip_followup=true` → solo guarda (sin Docling/LLM/score). Agregar/quitar números solo en BD; `equipo_ventas` (skip_followup=false) sigue certificados/traspasos.",
+        "height": 644,
         "width": 480,
         "color": 7
       },
-      "id": "note-wa",
+      "id": "66c1c961-fc5c-4688-adce-8b23dd5a407f",
       "name": "Nota WhatsApp",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -40,
-        -420
+        16688,
+        5344
       ]
     },
     {
@@ -28,13 +23,13 @@
         "path": "seguimientos-leads",
         "options": {}
       },
-      "id": "wh",
+      "id": "35c99ba5-d1e3-43b8-9082-cc67ed42af38",
       "name": "Webhook Evolution",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        0,
-        0
+        16720,
+        6096
       ],
       "webhookId": "7c3e9d21-4a8b-4f11-9c22-0e8b1a4d7003"
     },
@@ -42,13 +37,13 @@
       "parameters": {
         "jsCode": "function unwrapMessage(msg) {\n  if (!msg || typeof msg !== 'object') return {};\n  const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage'];\n  for (const w of wrappers) {\n    if (msg[w] && msg[w].message) return unwrapMessage(msg[w].message);\n  }\n  return msg;\n}\n\nconst root = $input.first().json || {};\nconst payload = root.body && root.body.data ? root.body : root;\nconst event = String(payload.event || '');\nif (event && event !== 'messages.upsert') {\n  return [];\n}\nconst data = payload.data || {};\nconst key = data.key || {};\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid.includes('status@broadcast') || remoteJid.endsWith('@broadcast')) {\n  return [];\n}\nconst alt = String(key.remoteJidAlt || '');\nconst jidForPhone = alt.includes('@s.whatsapp.net') ? alt : remoteJid;\nconst phone = jidForPhone.replace(/[^0-9]/g, '');\nif (!phone) {\n  return [];\n}\n\nconst msg = unwrapMessage(data.message || {});\nconst declared = String(data.messageType || '');\nconst mimeOf = (obj) => String((obj && obj.mimetype) || '');\n\nlet contentType = 'unknown';\nif (msg.extendedTextMessage || msg.conversation || declared === 'conversation' || declared === 'extendedTextMessage') {\n  contentType = 'text';\n}\nif (msg.imageMessage || declared === 'imageMessage' || mimeOf(msg.documentMessage).startsWith('image/')) {\n  contentType = 'image';\n}\nif (msg.videoMessage || msg.ptvMessage || declared === 'videoMessage' || declared === 'ptvMessage') {\n  contentType = 'video';\n}\nif (msg.audioMessage || declared === 'audioMessage') {\n  contentType = 'audio';\n}\nif (msg.stickerMessage || declared === 'stickerMessage') {\n  contentType = 'sticker';\n}\nif ((msg.documentMessage || declared === 'documentMessage') && contentType === 'unknown') {\n  contentType = 'document';\n}\n\nconst caption = [\n  (msg.extendedTextMessage && msg.extendedTextMessage.text) || '',\n  msg.conversation || '',\n  (msg.imageMessage && msg.imageMessage.caption) || '',\n  (msg.videoMessage && msg.videoMessage.caption) || '',\n  (msg.documentMessage && (msg.documentMessage.caption || msg.documentMessage.fileName)) || '',\n].join('').trim();\n\nconst labels = {\n  image: '[Imagen enviada]',\n  video: '[Video enviado]',\n  audio: '[Audio enviado]',\n  sticker: '[Sticker enviado]',\n  document: '[Documento enviado]',\n};\nlet content = caption;\nif (labels[contentType]) {\n  content = caption ? `${labels[contentType]} ${caption}` : labels[contentType];\n}\n\nconst ts = data.messageTimestamp;\nlet occurredAt;\nif (typeof ts === 'number') {\n  occurredAt = DateTime.fromSeconds(ts).toISO();\n} else if (ts && typeof ts.low === 'number') {\n  occurredAt = DateTime.fromSeconds(ts.low).toISO();\n} else {\n  occurredAt = DateTime.now().setZone('America/Caracas').toISO();\n}\n\nreturn [{\n  json: {\n    whatsapp_jid: remoteJid,\n    phone,\n    display_name: String(data.pushName || ''),\n    from_me: Boolean(key.fromMe),\n    message_id: String(key.id || `${remoteJid}-${occurredAt}`),\n    content_type: contentType,\n    body: content,\n    occurred_at: occurredAt,\n    evo_server_url: String(payload.server_url || '').replace(/\\/$/, ''),\n    evo_instance: String(payload.instance || ''),\n    evo_apikey: String(payload.apikey || ''),\n  },\n}];\n"
       },
-      "id": "norm",
+      "id": "f411b39c-f7cd-4568-8a8a-aaad57168b17",
       "name": "Normalizar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        220,
-        0
+        16944,
+        6096
       ]
     },
     {
@@ -59,19 +54,19 @@
           "queryReplacement": "={{ [$json.whatsapp_jid, $json.phone, $json.display_name] }}"
         }
       },
-      "id": "upsert-lead",
+      "id": "f09b198b-9de2-4127-b258-7bff4a055757",
       "name": "Upsert lead",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        440,
-        0
+        17168,
+        6096
       ],
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -83,19 +78,19 @@
           "queryReplacement": "={{ [$('Upsert lead').first().json.id, $('Normalizar').first().json.message_id, $('Normalizar').first().json.from_me, $('Normalizar').first().json.body, $('Normalizar').first().json.content_type, $('Normalizar').first().json.occurred_at] }}"
         }
       },
-      "id": "ins-msg",
+      "id": "3adfd002-c473-4bea-9505-282b2a8b48aa",
       "name": "Insertar mensaje",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        660,
-        0
+        17392,
+        6096
       ],
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -103,13 +98,13 @@
       "parameters": {
         "jsCode": "const lead = $('Upsert lead').first().json || {};\nconst norm = $('Normalizar').first().json || {};\nconst ins = $input.first().json || {};\nif (!ins.id) {\n  return [];\n}\nconst quoteRe = /OPCIONES DISPONIBLES|FORMULARIO DE REGISTRO|DETALLES DE TU ESTANCIA|cotizaci[oó]n y (fotos|videos)/i;\nreturn [{\n  json: {\n    lead_id: lead.id,\n    message_id: ins.id,\n    from_me: Boolean(norm.from_me),\n    is_quote: Boolean(norm.from_me && quoteRe.test(String(norm.body || ''))),\n    body: String(norm.body || ''),\n    content_type: String(norm.content_type || 'text'),\n    stage_prev: lead.stage,\n    quoted_at: lead.quoted_at || null,\n    score_cierre_prev: Number(lead.score_cierre || 0),\n    client_msg_count: Number(lead.client_msg_count || 0),\n  },\n}];\n"
       },
-      "id": "prep-upd",
+      "id": "9a872cb8-81f4-4081-ac7e-9a8c9b490685",
       "name": "Preparar update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        880,
-        0
+        17616,
+        6096
       ]
     },
     {
@@ -120,18 +115,42 @@
           "queryReplacement": "={{ [$json.lead_id, $json.from_me, $json.is_quote] }}"
         }
       },
-      "id": "upd-counts",
+      "id": "139d3c2e-9bab-4cb2-ab83-ff402b7ea66b",
       "name": "Actualizar contadores",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1100,
-        0
+        17840,
+        6096
       ],
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT EXISTS (\n  SELECT 1\n  FROM team_phones t\n  WHERE t.active\n    AND t.skip_followup\n    AND (\n      t.phone = $1\n      OR right(t.phone, 10) = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)\n    )\n) AS skip_score;",
+        "options": {
+          "queryReplacement": "={{ [$('Normalizar').first().json.phone] }}"
+        }
+      },
+      "id": "chk-team",
+      "name": "Consultar lista negra",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        17950,
+        6096
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -142,6 +161,51 @@
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-blacklist",
+              "leftValue": "={{ ['t', 'true', '1', true, 1].includes($json.skip_score) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-team",
+      "name": "En lista negra?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        18010,
+        5896
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-team",
+      "name": "Solo lista negra sin score",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        18064,
+        5896
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
             "version": 2
           },
           "conditions": [
@@ -160,24 +224,24 @@
         },
         "options": {}
       },
-      "id": "if-me",
+      "id": "6706bb0e-b63f-4357-8d3e-63f3817ceb49",
       "name": "Es asesora?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1320,
-        0
+        18064,
+        6096
       ]
     },
     {
       "parameters": {},
-      "id": "noop-me",
+      "id": "ecf3a40d-7eb5-4e10-9548-912c682656ef",
       "name": "Solo guardar asesora",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1540,
-        -140
+        18512,
+        5760
       ]
     },
     {
@@ -205,24 +269,24 @@
         },
         "options": {}
       },
-      "id": "if-text",
+      "id": "07a64d34-11fe-4185-8c8c-40932563230f",
       "name": "Hay texto cliente?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1540,
-        220
+        19440,
+        6416
       ]
     },
     {
       "parameters": {},
-      "id": "noop-empty",
+      "id": "75bac0d4-ccf9-433d-9d23-d3dfddf460bd",
       "name": "Sin texto",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1760,
-        220
+        19680,
+        6624
       ]
     },
     {
@@ -233,19 +297,19 @@
           "queryReplacement": "={{ $('Actualizar contadores').first().json.id }}"
         }
       },
-      "id": "load-ctx",
+      "id": "666f40f0-f7d8-4a55-81c6-786b5c47dd6a",
       "name": "Cargar contexto",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1760,
-        80
+        20464,
+        6416
       ],
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -253,13 +317,13 @@
       "parameters": {
         "jsCode": "const lead = $('Actualizar contadores').first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst rows = $input.all()\n  .map((item) => item.json)\n  .filter((row) => row && row.body);\nconst current = rows.find((row) => Number(row.id) === Number(prep.message_id)) || null;\nconst signals = { pago: true, reserva: true, consulta: true, ninguna: true };\nconst rawSignal = current ? String(current.media_signal || '') : '';\nconst image_signal = signals[rawSignal] ? rawSignal : 'ninguna';\nconst mensaje = current && current.body ? String(current.body) : String(prep.body || '');\nconst lines = rows\n  .slice()\n  .reverse()\n  .map((row) => {\n    const who = row.from_me ? 'ASESORA' : 'CLIENTE';\n    return `[${row.occurred_local || ''}] ${who}: ${row.body}`;\n  });\nreturn [{\n  json: {\n    lead_id: lead.id,\n    message_id: prep.message_id,\n    stage_prev: lead.stage,\n    quoted_at: lead.quoted_at || null,\n    client_msg_count: Number(lead.client_msg_count || 0),\n    score_cierre_prev: Number(lead.score_cierre || 0),\n    contexto: lines.join('\\n') || 'Sin historial previo.',\n    mensaje,\n    image_signal,\n  },\n}];\n"
       },
-      "id": "armar-ctx",
+      "id": "93d33312-d34f-4abd-bc1e-5728c0cbd0e2",
       "name": "Armar contexto",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1980,
-        80
+        20656,
+        6112
       ]
     },
     {
@@ -268,13 +332,13 @@
         "text": "=Eres un filtro de mensajes de WhatsApp para un hotel (hospedaje/reservas). No respondas al cliente.\n\nElige UNA categoría para el último mensaje del CLIENTE, MIRANDO EL HISTORIAL:\n- relevante: fechas, precios, habitación, personas, reserva, pago, formulario, consultar con familia, o respuesta a la cotización. Un \"ok\", \"sí\", \"vale\", \"listo\" o \"gracias\" ES relevante si ya hubo cotización, formulario, precios o preguntas de habitación (no cortes el embudo).\n- irrelevante: saludo repetido o emoji solo, SIN historial de cotización/reserva.\n- spam: publicidad ajena, criptos, bots, links raros. Pedir precio del hotel NO es spam.\n- error: sin sentido o solo símbolos. Un typo (ña zona, chamos) NO es error.\nSi el mensaje actual empieza con [Imagen] y trae senal=pago, senal=reserva o senal=consulta, es relevante.\n\nHistorial:\n{{ $json.contexto }}\n\nMensaje actual del CLIENTE:\n{{ $json.mensaje }}\n\nResponde SOLO una palabra: relevante, irrelevante, spam o error.",
         "batching": {}
       },
-      "id": "clf",
+      "id": "5ec39a29-7507-475e-a336-5abaa32360a3",
       "name": "Filtro relevancia",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.7,
       "position": [
-        2200,
-        80
+        20880,
+        6112
       ],
       "retryOnFail": true,
       "maxTries": 2,
@@ -289,17 +353,17 @@
           "timeout": 20000
         }
       },
-      "id": "ds-clf",
+      "id": "9a7a96f0-0e6c-46fc-ba59-8c50f0f4ae7c",
       "name": "DeepSeek Filtro",
       "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
       "typeVersion": 1,
       "position": [
-        2200,
-        340
+        20960,
+        6352
       ],
       "credentials": {
         "deepSeekApi": {
-          "id": "PEGAR_CRED_DEEPSEEK",
+          "id": "7xPiUS0ymrMUYggN",
           "name": "DeepSeek account"
         }
       }
@@ -324,13 +388,13 @@
         },
         "options": {}
       },
-      "id": "set-irr",
+      "id": "554616d1-9baf-428f-8552-f4173d149545",
       "name": "Label irrelevante",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2480,
-        200
+        21680,
+        6112
       ]
     },
     {
@@ -353,13 +417,13 @@
         },
         "options": {}
       },
-      "id": "set-spam",
+      "id": "5aa73d93-40ea-4c50-a1c1-a6386dcc4764",
       "name": "Label spam",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2480,
-        360
+        21680,
+        6304
       ]
     },
     {
@@ -382,13 +446,13 @@
         },
         "options": {}
       },
-      "id": "set-err",
+      "id": "d04430a6-31b9-41fa-aa03-794e70d26d76",
       "name": "Label error",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2480,
-        520
+        21680,
+        6496
       ]
     },
     {
@@ -399,18 +463,18 @@
           "queryReplacement": "={{ [$json.message_id, $json.filter_label] }}"
         }
       },
-      "id": "mark-skip",
+      "id": "f121a413-3764-4007-b535-2533f2ac7e42",
       "name": "Marcar filtro",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        2720,
-        360
+        21968,
+        6208
       ],
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -422,18 +486,18 @@
           "queryReplacement": "={{ $('Armar contexto').first().json.message_id }}"
         }
       },
-      "id": "mark-rel",
+      "id": "fb5517bf-99e1-4591-9b48-854e078c9877",
       "name": "Marcar relevante",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        2480,
-        -40
+        21680,
+        5872
       ],
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -443,13 +507,13 @@
         "text": "=Eres clasificador de embudo hotelero. NO respondas al cliente. Analiza historial + último mensaje del CLIENTE.\n\nEtapas:\n- en_proceso: conversación activa, cotizando o decidiendo.\n- concreto: pidió reservar, llenó formulario con cédula, apartar, abonar o pagar.\n- pregunto_no_concreto: varias preguntas post-cotización (habitación, zona, precio, camas) y no cerró.\n- no_respondio: preguntó, recibió cotización/formulario, casi no volvió (a lo sumo consulto con esposo).\nSi el cliente acaba de escribir, NO uses no_respondio.\n\nScores enteros 0-100:\n- score_cierre: señales de reserva/pago.\n- score_engagement: cuánto preguntó.\n- score_silencio: riesgo de ghosting.\n- score_potencial: utilidad para difusión (alto si hay interés y NO reservó).\n\nsentiment: positivo|neutro|negativo|enfadado\nreason: una frase en español.\n\nStage previo: {{ $('Armar contexto').first().json.stage_prev }}. quoted_at: {{ $('Armar contexto').first().json.quoted_at }}. msgs cliente: {{ $('Armar contexto').first().json.client_msg_count }}.\n\nHistorial:\n{{ $('Armar contexto').first().json.contexto }}\n\nÚltimo mensaje CLIENTE:\n{{ $('Armar contexto').first().json.mensaje }}\n\nResponde SOLO JSON:\n{\"stage\":\"en_proceso\",\"score_potencial\":0,\"score_engagement\":0,\"score_cierre\":0,\"score_silencio\":0,\"sentiment\":\"neutro\",\"reason\":\"...\"}",
         "batching": {}
       },
-      "id": "cls-etapa",
+      "id": "09091b14-5843-4ba1-8f40-e60224cc2b61",
       "name": "Clasificar etapa",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.7,
       "position": [
-        2700,
-        -40
+        21904,
+        5760
       ]
     },
     {
@@ -460,17 +524,17 @@
           "temperature": 0.1
         }
       },
-      "id": "ds-cls",
+      "id": "511c8412-8baf-4ee9-be4a-261b82a644d7",
       "name": "DeepSeek Clasificar",
       "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
       "typeVersion": 1,
       "position": [
-        2700,
-        180
+        21984,
+        6000
       ],
       "credentials": {
         "deepSeekApi": {
-          "id": "PEGAR_CRED_DEEPSEEK",
+          "id": "7xPiUS0ymrMUYggN",
           "name": "DeepSeek account"
         }
       }
@@ -479,13 +543,13 @@
       "parameters": {
         "jsCode": "const parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') {\n  raw = JSON.stringify(raw);\n}\nraw = String(raw).replace(/```json/gi, '').replace(/```/g, '').trim();\nlet data = {};\ntry {\n  data = JSON.parse(raw);\n} catch (e) {\n  data = {};\n}\nconst lead = $('Actualizar contadores').first().json || {};\nconst ctx = $('Armar contexto').first().json || {};\nconst body = String(ctx.mensaje || '');\nconst allText = `${ctx.contexto || ''}\\n${body}`;\nconst closeRe = /para reservar|voy a pagar|puedo abonar|me la (puede )?apartar|pagar completo|hacer la reservaci|ya pagu[eé]|env[ií]o (el )?pago/i;\nconst stages = { en_proceso: true, concreto: true, pregunto_no_concreto: true, no_respondio: true };\nconst sentiments = { positivo: true, neutro: true, negativo: true, enfadado: true };\nconst clamp = (n, d) => {\n  const v = Number(n);\n  if (!Number.isFinite(v)) return d;\n  return Math.max(0, Math.min(100, Math.round(v)));\n};\nlet stage = stages[data.stage] ? data.stage : 'en_proceso';\nlet score_cierre = clamp(data.score_cierre, 0);\nlet score_engagement = clamp(data.score_engagement, 0);\nlet score_silencio = clamp(data.score_silencio, 0);\nlet score_potencial = clamp(data.score_potencial, 0);\nlet sentiment = sentiments[data.sentiment] ? data.sentiment : 'neutro';\nlet reason = String(data.reason || '').slice(0, 280);\nif (closeRe.test(allText)) {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, 85);\n  score_potencial = Math.min(score_potencial, 20);\n  reason = reason || 'Señales explícitas de reserva o pago';\n}\nif (String(ctx.image_signal || '') === 'pago') {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, 85);\n  score_potencial = Math.min(score_potencial, 20);\n  reason = reason || 'Comprobante de pago en imagen';\n}\nif (lead.stage === 'concreto' || ctx.stage_prev === 'concreto') {\n  stage = 'concreto';\n  score_cierre = Math.max(score_cierre, Number(lead.score_cierre) || 85);\n}\nif (stage === 'no_respondio') {\n  stage = score_engagement >= 55 && (lead.quoted_at || ctx.quoted_at) ? 'pregunto_no_concreto' : 'en_proceso';\n}\nif (stage !== 'concreto') {\n  const blended = Math.round((score_engagement * 0.6) + ((100 - score_cierre) * 0.2) + ((100 - score_silencio) * 0.2));\n  score_potencial = clamp(Math.max(score_potencial, blended), score_potencial);\n}\nreturn [{\n  json: {\n    lead_id: lead.id,\n    stage,\n    score_potencial,\n    score_engagement,\n    score_cierre,\n    score_silencio,\n    sentiment,\n    reason: reason || 'Clasificación de conversación',\n  },\n}];\n"
       },
-      "id": "apply",
+      "id": "45b0fe90-4c95-4205-a92a-c9c070d40374",
       "name": "Aplicar reglas",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2940,
-        -40
+        22256,
+        5872
       ]
     },
     {
@@ -496,18 +560,18 @@
           "queryReplacement": "={{ [$json.lead_id, $json.stage, $json.score_potencial, $json.score_engagement, $json.score_cierre, $json.score_silencio, $json.sentiment, $json.reason] }}"
         }
       },
-      "id": "save-lead",
+      "id": "3a75196e-044c-4799-9675-7b3ec7e6f7a7",
       "name": "Guardar lead",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3160,
-        -40
+        22480,
+        5872
       ],
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -519,18 +583,18 @@
           "queryReplacement": "={{ [$('Aplicar reglas').item.json.lead_id, $('Aplicar reglas').item.json.stage, $('Aplicar reglas').item.json.score_potencial, $('Aplicar reglas').item.json.score_engagement, $('Aplicar reglas').item.json.score_cierre, $('Aplicar reglas').item.json.score_silencio, $('Aplicar reglas').item.json.sentiment, $('Aplicar reglas').item.json.reason] }}"
         }
       },
-      "id": "save-evt",
+      "id": "755dde42-ca8f-49fa-94eb-b9b36949206a",
       "name": "Registrar evento",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3380,
-        -40
+        22704,
+        5872
       ],
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -538,13 +602,13 @@
       "parameters": {
         "jsCode": "const ctx = $('Armar contexto').first().json || {};\nconst parsed = $input.first().json || {};\nlet raw = parsed.text || parsed.output || parsed.response || parsed.message || '';\nif (raw && typeof raw === 'object') raw = JSON.stringify(raw);\nraw = String(raw).toLowerCase();\nconst msg = String(ctx.mensaje || '').trim();\nconst contexto = String(ctx.contexto || '');\nconst imageSignal = String(ctx.image_signal || '');\nif (imageSignal === 'pago' || imageSignal === 'reserva' || imageSignal === 'consulta') {\n  return [{ json: { filter_label: 'relevante', message_id: ctx.message_id } }];\n}\nconst captionMatch = msg.match(/Caption:\\s*(.*)$/i);\nconst isImageNone = /^\\[Imagen\\b/i.test(msg) && imageSignal === 'ninguna';\nconst askText = isImageNone ? String(captionMatch ? captionMatch[1] : '') : msg;\nconst inFunnel = Boolean(ctx.quoted_at) || /(OPCIONES DISPONIBLES|FORMULARIO|cotizaci|habitaci|reserva con|€\\d)/i.test(contexto);\nconst shortAck = /^(ok+|okay|okei|vale|si|sí|bueno|listo|gracias|dale|perfecto)[\\s.!,]*$/i.test(askText);\nconst hotelAsk = /(precio|habitaci|disponib|reserv|fecha|noche|adulto|niñ|hosped|apartar|abonar|pagar|cotiz)/i.test(askText);\nlet label = 'irrelevante';\nif (/\\bspam\\b/.test(raw)) label = 'spam';\nelse if (/\\berror\\b/.test(raw) && !/\\brelevante\\b/.test(raw)) label = 'error';\nelse if (shortAck && inFunnel) label = 'relevante';\nelse if (hotelAsk) label = 'relevante';\nelse if (/\\brelevante\\b/.test(raw) && !/\\birrelevante\\b/.test(raw)) label = 'relevante';\nelse if (/\\birrelevante\\b/.test(raw)) label = 'irrelevante';\nelse if (!isImageNone && inFunnel && msg.length > 0) label = 'relevante';\nreturn [{ json: { filter_label: label, message_id: ctx.message_id } }];\n"
       },
-      "id": "parse-clf",
+      "id": "97104b85-ae35-4ade-8cce-1ed68371254f",
       "name": "Parsear filtro",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2420,
-        80
+        21232,
+        6112
       ]
     },
     {
@@ -653,13 +717,13 @@
           "fallbackOutput": "extra"
         }
       },
-      "id": "sw-clf",
+      "id": "84182a49-247a-44e1-a388-ae61cd01991c",
       "name": "Ruta filtro",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        2620,
-        80
+        21456,
+        6064
       ]
     },
     {
@@ -687,13 +751,13 @@
         },
         "options": {}
       },
-      "id": "if-img",
+      "id": "89a9f5bd-eeca-4eaf-a5e1-096a0631a6db",
       "name": "Es imagen?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1540,
-        80
+        18288,
+        6288
       ]
     },
     {
@@ -714,32 +778,31 @@
         "jsonBody": "={{ JSON.stringify({ message: { key: { id: $('Normalizar').first().json.message_id } }, convertToMp4: false }) }}",
         "options": {
           "timeout": 30000
-        },
-        "contentType": "json"
+        }
       },
-      "id": "evo-media",
+      "id": "ddc00af8-4528-459d-8142-48a7f29b0825",
       "name": "Evolution media",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1760,
-        400
+        18720,
+        6976
       ],
-      "continueOnFail": true,
       "alwaysOutputData": true,
+      "continueOnFail": true,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst nested = raw.data && typeof raw.data === 'object' ? raw.data : {};\nlet base64 = String(raw.base64 || raw.base64Data || nested.base64 || '');\nbase64 = base64.replace(/^data:image\\/[a-zA-Z0-9.+-]+;base64,/, '');\nconst mimetype = String(raw.mimetype || raw.mimeType || nested.mimetype || 'image/jpeg');\nconst err = raw.error || raw.message || '';\nif (!base64 || base64.length < 32) {\n  return [{ json: { media_ok: false, mimetype, error: String(err || 'sin base64') } }];\n}\nreturn [{ json: { media_ok: true, base64, mimetype } }];\n"
       },
-      "id": "prep-media",
+      "id": "57ab1672-2745-40ab-b74d-bcf47289fafb",
       "name": "Preparar media",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1980,
-        400
+        18944,
+        6976
       ]
     },
     {
@@ -767,13 +830,13 @@
         },
         "options": {}
       },
-      "id": "if-media",
+      "id": "1744817e-96be-4efc-bca6-ea2d7883cd9a",
       "name": "Hay media?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2200,
-        400
+        19168,
+        6976
       ]
     },
     {
@@ -784,13 +847,13 @@
           "mimeType": "={{ $json.mimetype }}"
         }
       },
-      "id": "conv-img",
+      "id": "0c61d8ed-58db-493a-93a1-475dec2195b4",
       "name": "Convertir imagen",
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        2420,
-        400
+        19392,
+        6928
       ],
       "continueOnFail": true,
       "onError": "continueRegularOutput"
@@ -804,20 +867,19 @@
             {
               "type": "HumanMessagePromptTemplate",
               "messageType": "imageBinary",
-              "binaryImageDataKey": "data",
               "imageDetail": "high"
             }
           ]
         },
         "batching": {}
       },
-      "id": "analyze-img",
+      "id": "6fa15e05-5518-4496-8092-7cce85cab7bf",
       "name": "Analizar imagen",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.7,
       "position": [
-        2640,
-        400
+        19616,
+        6816
       ],
       "continueOnFail": true,
       "onError": "continueRegularOutput"
@@ -835,17 +897,17 @@
           "temperature": 0
         }
       },
-      "id": "ds-vision",
+      "id": "2b74fb28-39e8-468c-a20b-2d433713a849",
       "name": "DeepSeek Vision",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.2,
       "position": [
-        2640,
-        560
+        19680,
+        7056
       ],
       "credentials": {
         "openAiApi": {
-          "id": "PEGAR_CRED_OPENAI_DEEPSEEK",
+          "id": "BFXbRnt1OOtJyn60",
           "name": "OpenAI (DeepSeek vision)"
         }
       }
@@ -870,26 +932,26 @@
         },
         "options": {}
       },
-      "id": "fallback-img",
+      "id": "cc1d52eb-b032-4337-8396-95dcdbc49601",
       "name": "Fallback imagen",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2420,
-        560
+        19680,
+        7216
       ]
     },
     {
       "parameters": {
         "jsCode": "const parsed = $input.first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst norm = $('Normalizar').first().json || {};\nconst extra = parsed.additional_kwargs || parsed.additionalKwargs || {};\nlet data = {};\nlet raw = '';\nif (parsed.tipo || parsed.senal_embudo) {\n  data = parsed;\n  raw = JSON.stringify({\n    tipo: parsed.tipo,\n    texto_visible: parsed.texto_visible,\n    senal_embudo: parsed.senal_embudo,\n    resumen: parsed.resumen,\n  });\n} else {\n  raw = parsed.text || parsed.output || parsed.response || parsed.message\n    || parsed.reasoning_content || parsed.reasoning || extra.reasoning_content || '';\n  if (raw && typeof raw === 'object') raw = JSON.stringify(raw);\n  raw = String(raw).replace(/```json/gi, '').replace(/```/g, '').trim();\n  if (!raw.startsWith('{')) {\n    const dumped = JSON.stringify(parsed);\n    const match = dumped.match(/\\{[^{}]*\"tipo\"\\s*:\\s*\"[^\"]+\"[^{}]*\\}/);\n    if (match) raw = match[0];\n  }\n  try {\n    data = JSON.parse(raw);\n  } catch (e) {\n    data = {};\n  }\n}\nconst tipos = {\n  comprobante_pago: true,\n  cedula: true,\n  formulario: true,\n  screenshot_reserva: true,\n  foto_habitacion: true,\n  otro: true,\n};\nconst senales = { pago: true, reserva: true, consulta: true, ninguna: true };\nconst mediaOk = !parsed.fallback && !parsed.error && raw.startsWith('{') && Boolean(data.tipo || data.senal_embudo);\nconst tipo = mediaOk && tipos[data.tipo] ? data.tipo : 'otro';\nlet senal = 'ninguna';\nif (mediaOk && senales[data.senal_embudo]) senal = data.senal_embudo;\nif (mediaOk && tipo === 'comprobante_pago') senal = 'pago';\nconst texto_visible = String(data.texto_visible || '').slice(0, 300);\nconst resumen = String(data.resumen || '').slice(0, 280);\nconst caption = String(norm.body || '').replace(/^\\[Imagen enviada\\]\\s*/i, '').trim();\nconst analysis = mediaOk\n  ? JSON.stringify({ tipo, texto_visible, senal_embudo: senal, resumen })\n  : null;\nconst body = mediaOk\n  ? [`[Imagen] tipo=${tipo} senal=${senal}: ${resumen || 'sin resumen'}`, texto_visible ? `Texto: ${texto_visible}` : '', caption ? `Caption: ${caption}` : ''].filter(Boolean).join(' ')\n  : (caption ? `[Imagen no disponible] ${caption}` : '[Imagen no disponible]');\nreturn [{\n  json: {\n    message_id: prep.message_id,\n    media_analysis: analysis,\n    media_signal: senal,\n    body,\n  },\n}];\n"
       },
-      "id": "parse-img",
+      "id": "e81dea22-4909-4e50-841e-69e65120923c",
       "name": "Parsear análisis",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2860,
-        400
+        19968,
+        6976
       ]
     },
     {
@@ -900,19 +962,19 @@
           "queryReplacement": "={{ [$json.message_id, $json.media_analysis, $json.media_signal, $json.body] }}"
         }
       },
-      "id": "save-img",
+      "id": "de4a7ef0-30cd-48e7-b765-d31790f77c60",
       "name": "Guardar análisis",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3080,
-        400
+        20192,
+        6976
       ],
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -923,13 +985,13 @@
         "width": 520,
         "color": 5
       },
-      "id": "note-img",
+      "id": "0ad0ed0c-150c-4509-b676-b7750ae20490",
       "name": "Nota imagen",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1760,
-        680
+        18656,
+        6624
       ]
     },
     {
@@ -956,13 +1018,13 @@
         },
         "options": {}
       },
-      "id": "if-audio",
+      "id": "5f673fcb-dd0e-483b-9eee-1033075001a8",
       "name": "Es audio",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1760,
-        -200
+        18544,
+        6304
       ]
     },
     {
@@ -983,32 +1045,31 @@
         "jsonBody": "={{ JSON.stringify({ message: { key: { id: $('Normalizar').first().json.message_id } }, convertToMp4: false }) }}",
         "options": {
           "timeout": 30000
-        },
-        "contentType": "json"
+        }
       },
-      "id": "evo-audio",
+      "id": "5d57657e-73d1-4bbf-801b-b130a7e8fec1",
       "name": "Evolution audio",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1980,
-        -240
+        18768,
+        6224
       ],
-      "continueOnFail": true,
       "alwaysOutputData": true,
+      "continueOnFail": true,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst nested = raw.data && typeof raw.data === 'object' ? raw.data : {};\nlet base64 = String(raw.base64 || raw.base64Data || nested.base64 || '');\nbase64 = base64.replace(/^data:[a-zA-Z0-9.+-]+\\/[a-zA-Z0-9.+-]+;base64,/, '');\nconst mimetype = String(raw.mimetype || raw.mimeType || nested.mimetype || 'audio/ogg');\nconst err = raw.error || raw.message || '';\nif (!base64 || base64.length < 32) {\n  return [{ json: { media_ok: false, mimetype, error: String(err || 'sin base64') } }];\n}\nreturn [{ json: { media_ok: true, base64, mimetype } }];\n"
       },
-      "id": "prep-audio",
+      "id": "224210f4-a185-4862-ab3e-c66aaf1f8fb6",
       "name": "Preparar audio",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2200,
-        -240
+        18992,
+        6224
       ]
     },
     {
@@ -1036,13 +1097,13 @@
         },
         "options": {}
       },
-      "id": "if-has-audio",
+      "id": "2d4dbbbe-0c5d-4dd8-aa4c-3f84498bafb1",
       "name": "Hay audio?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2420,
-        -240
+        19216,
+        6224
       ]
     },
     {
@@ -1053,13 +1114,13 @@
           "mimeType": "={{ $json.mimetype }}"
         }
       },
-      "id": "conv-audio",
+      "id": "2d15ce83-cb5b-43e6-b9c5-5fe401d45eae",
       "name": "Convertir audio",
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        2640,
-        -280
+        19440,
+        6224
       ],
       "continueOnFail": true,
       "onError": "continueRegularOutput"
@@ -1100,29 +1161,29 @@
           "timeout": 120000
         }
       },
-      "id": "stt-audio",
+      "id": "a4b7afc4-fc62-46af-a777-6ca16418dbfa",
       "name": "Transcribir audio",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        2860,
-        -280
+        19728,
+        6224
       ],
-      "continueOnFail": true,
       "alwaysOutputData": true,
+      "continueOnFail": true,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "jsCode": "const raw = $input.first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst text = String(raw.text || '').replace(/\\s+/g, ' ').trim();\nconst body = text ? `[Audio] ${text}` : '[Audio enviado]';\nreturn [{\n  json: {\n    message_id: prep.message_id,\n    body,\n  },\n}];\n"
       },
-      "id": "texto-audio",
+      "id": "8738438c-9d6b-4720-9c1b-fb0eb4a3da37",
       "name": "Texto audio",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3080,
-        -280
+        20016,
+        6224
       ]
     },
     {
@@ -1133,19 +1194,19 @@
           "queryReplacement": "={{ [$json.message_id, $json.body] }}"
         }
       },
-      "id": "save-audio",
+      "id": "fdb9ae85-2f7e-4b49-93f8-c491acef26db",
       "name": "Guardar texto audio",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3300,
-        -280
+        20240,
+        6224
       ],
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -1156,13 +1217,13 @@
         "width": 520,
         "color": 4
       },
-      "id": "note-audio",
+      "id": "24a08c56-7102-4aa2-ace3-9b31277e5745",
       "name": "Nota audio",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1980,
-        -620
+        18656,
+        5920
       ]
     },
     {
@@ -1171,7 +1232,7 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "loose",
+            "typeValidation": "strict",
             "version": 2
           },
           "conditions": [
@@ -1190,13 +1251,13 @@
         },
         "options": {}
       },
-      "id": "if-cert",
+      "id": "5cc40128-b38a-42ee-912a-8953bf67c84c",
       "name": "Es certificado?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1540,
-        -140
+        18288,
+        5664
       ]
     },
     {
@@ -1217,32 +1278,31 @@
         "jsonBody": "={{ JSON.stringify({ message: { key: { id: $('Normalizar').first().json.message_id } }, convertToMp4: false }) }}",
         "options": {
           "timeout": 60000
-        },
-        "contentType": "json"
+        }
       },
-      "id": "evo-cert",
+      "id": "5f08f7a1-1fdb-4c15-b984-5569f0698cec",
       "name": "Evolution certificado",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1760,
-        -280
+        18512,
+        5568
       ],
-      "continueOnFail": true,
       "alwaysOutputData": true,
+      "continueOnFail": true,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst nested = raw.data && typeof raw.data === 'object' ? raw.data : {};\nlet base64 = String(raw.base64 || raw.base64Data || nested.base64 || '');\nbase64 = base64.replace(/^data:[a-zA-Z0-9.+-]+\\/[a-zA-Z0-9.+-]+;base64,/, '');\nconst mimetype = String(raw.mimetype || raw.mimeType || nested.mimetype || 'application/pdf');\nconst err = raw.error || raw.message || '';\nif (!base64 || base64.length < 32) {\n  return [{ json: { media_ok: false, mimetype, error: String(err || 'sin base64') } }];\n}\nreturn [{ json: { media_ok: true, base64, mimetype } }];\n"
       },
-      "id": "prep-cert",
+      "id": "301121c9-4af2-4907-bf55-7040d210077c",
       "name": "Preparar certificado",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1980,
-        -280
+        18736,
+        5568
       ]
     },
     {
@@ -1251,7 +1311,7 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "loose",
+            "typeValidation": "strict",
             "version": 2
           },
           "conditions": [
@@ -1270,13 +1330,13 @@
         },
         "options": {}
       },
-      "id": "if-cert-file",
+      "id": "639c0e3f-d1b3-45bb-ae6f-391161cac4f0",
       "name": "Hay archivo cert?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2200,
-        -280
+        18960,
+        5568
       ]
     },
     {
@@ -1284,17 +1344,17 @@
         "operation": "toBinary",
         "sourceProperty": "base64",
         "options": {
-          "mimeType": "={{ $json.mimetype || 'application/pdf' }}",
-          "fileName": "certificado.pdf"
+          "fileName": "certificado.pdf",
+          "mimeType": "={{ $json.mimetype || 'application/pdf' }}"
         }
       },
-      "id": "conv-cert",
+      "id": "543be9e6-6584-4539-bb1c-7a893d163c56",
       "name": "Convertir certificado",
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        2420,
-        -360
+        19184,
+        5536
       ],
       "continueOnFail": true,
       "onError": "continueRegularOutput"
@@ -1363,29 +1423,29 @@
           "timeout": 180000
         }
       },
-      "id": "docling-cert",
+      "id": "8d288bae-73e3-48cc-8333-939bbfda9f84",
       "name": "Docling certificado",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2640,
-        -360
+        19408,
+        5536
       ],
-      "continueOnFail": true,
       "alwaysOutputData": true,
+      "continueOnFail": true,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "jsCode": "const raw = $input.first().json || {};\nconst prep = $('Preparar update').first().json || {};\nconst norm = $('Normalizar').first().json || {};\nconst doc = raw.document || {};\nlet text = String(doc.text_content || doc.md_content || '').replace(/\\s+/g, ' ').trim();\nconst md = String(doc.md_content || '').trim();\nconst ok = Boolean(text) && String(raw.status || '').toLowerCase() !== 'failure';\n\n// Primera hoja: cortar políticas / página 2\nconst cutRe = /\\b(NOTA\\s*:|IMPORTANTE\\s*:|NUESTRA\\s+POL[IÍ]TIC|POL[IÍ]TICAS\\s+anex|Favor presentar este documento|<!--\\s*page\\s*break|formfeed)/i;\nconst cutAt = text.search(cutRe);\nif (cutAt > 80) text = text.slice(0, cutAt).trim();\nlet mdFirst = md;\nconst mdCut = mdFirst.search(cutRe);\nif (mdCut > 80) mdFirst = mdFirst.slice(0, mdCut).trim();\nconst src = `${mdFirst}\\n${text}`;\n\nconst pick = (re) => {\n  const m = src.match(re);\n  return m ? String(m[1] || m[2] || '').replace(/\\s+/g, ' ').trim() : '';\n};\nconst looksLikeRoom = (s) => /matrimonial|individual|suite|est[aá]ndar|doble|triple|\\d+\\s/i.test(s)\n  && !/debe pagar|acuerdo al caso|pol[ií]tica/i.test(s);\n\nlet huesped = pick(/Ciudadano\\(a\\):\\s*([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜa-záéíóúñü\\s.'-]{2,80}?)(?=\\s+[VEP]-|\\s+PAS-|\\s+Presente|\\s+RIF:|$)/i)\n  || pick(/hu[eé]sped(?:es)?\\s*[:\\-]\\s*([^\\n|]+)/i);\nhuesped = huesped.replace(/\\s+/g, ' ').trim();\n\nconst cedula = pick(/\\b([VE]-?\\d{1,2}\\.?\\d{3}\\.?\\d{3})\\b/i)\n  || pick(/\\b(PAS-[A-Z0-9\\-]+)\\b/i);\n\nconst checkin = pick(/Check\\s*In\\s*:[^F]{0,40}Fecha\\s*:\\s*([0-9]{1,2}[\\/\\-.][0-9]{1,2}[\\/\\-.][0-9]{2,4})/i)\n  || pick(/check[\\s\\-]?in\\s*[:\\-]\\s*([0-9]{1,2}[\\/\\-.][0-9]{1,2}[\\/\\-.][0-9]{2,4})/i);\n\nconst checkout = pick(/Check\\s*Out\\s*:[^F]{0,40}Fecha\\s*:\\s*([0-9]{1,2}[\\/\\-.][0-9]{1,2}[\\/\\-.][0-9]{2,4})/i)\n  || pick(/check[\\s\\-]?out\\s*[:\\-]\\s*([0-9]{1,2}[\\/\\-.][0-9]{1,2}[\\/\\-.][0-9]{2,4})/i);\n\nlet habitacion = pick(/Tipo\\(s\\)\\s+de\\s+Habitaci[oó]n(?:\\(es\\)|es)?\\s*:\\s*([^\\-|]+?)(?=\\s*-\\s*Destino|\\s*Monto|\\s*Plan|\\s*$)/i)\n  || pick(/Habitaci[oó]n(?:es)?\\s*:\\s*([A-Z0-9ÁÉÍÓÚÑÜ][A-Z0-9ÁÉÍÓÚÑÜa-záéíóúñü\\s.]{2,60})/i);\nif (habitacion && !looksLikeRoom(habitacion)) habitacion = '';\n\nconst plan = pick(/Plan\\s*:\\s*([^-|]+?)(?=\\s*-\\s*PAX|\\s*-\\s*Duraci|\\s*$)/i);\nconst pax = pick(/PAX\\.?\\s*(\\d+)/i);\nconst noches = pick(/Duraci[oó]n\\s*:\\s*([^-\\n|]+?)(?=\\s*-\\s*Check|\\s*$)/i);\nconst monto = pick(/Monto Total(?: de Hospedaje)?\\s*:\\s*(€?\\s*[\\d.,]+)/i);\nconst pendiente = pick(/Monto Pendiente(?: a Pagar)?\\s*:\\s*(€?\\s*[\\d.,]+)/i);\nconst formaPago = pick(/\\|?\\s*(TARJETA\\s+INTERNACIONAL|PAGO\\s+M[OÓ]VIL|TRANSFERENCIA|ZELLE|EFECTIVO|DEP[OÓ]SITO)[^|]{0,40}/i)\n  || pick(/Forma de pago[^A-Z]{0,20}([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ\\s]{3,40})/i);\nconst cuentaPago = pick(/\\b(EN EL HOTEL)\\b/i);\nconst destino = pick(/Destino\\s*:\\s*([^-|]+?)(?=\\s*Monto|\\s*$)/i);\nconst asesora = pick(/\\b(EVELIN\\s+YARZA|DARWIN\\s+BRET|[A-ZÁÉÍÓÚÑÜ]{3,}\\s+[A-ZÁÉÍÓÚÑÜ]{3,})\\s+EJECUTIVA/i)\n  || pick(/EJECUTIVA DE VENTAS[^A-Z]{0,5}([A-ZÁÉÍÓÚÑÜ\\s]{5,40})/i);\nconst telAsesora = pick(/\\b(04\\d{2}\\s?\\d{3}\\s?\\d{4})\\b/);\nconst emitido = pick(/Tucacas,?\\s*([0-9]{1,2}\\s+de\\s+[A-Za-zÁÉÍÓÚáéíóú]+\\s+de\\s+[0-9]{4})/i);\nconst caption = String(norm.body || '').replace(/^\\[Documento enviado\\]\\s*/i, '').trim();\n\nconst fields = {\n  huesped: huesped || null,\n  cedula: cedula || null,\n  checkin: checkin || null,\n  checkout: checkout || null,\n  noches: noches || null,\n  habitacion: habitacion || null,\n  plan: plan || null,\n  pax: pax || null,\n  monto: monto || null,\n  pendiente: pendiente || null,\n  forma_pago: [formaPago, cuentaPago].filter(Boolean).join(' ').trim() || null,\n  destino: destino || null,\n  asesora: (asesora || '').replace(/\\s+EJECUTIVA.*/i, '').trim() || null,\n  tel_asesora: telAsesora || null,\n  emitido: emitido || null,\n  archivo: caption || null,\n};\n\nconst bits = [];\nif (fields.huesped) bits.push(`Huésped: ${fields.huesped}`);\nif (fields.cedula) bits.push(`Cédula: ${fields.cedula}`);\nif (fields.checkin) bits.push(`Check-in: ${fields.checkin}`);\nif (fields.checkout) bits.push(`Check-out: ${fields.checkout}`);\nif (fields.noches) bits.push(`Estancia: ${fields.noches}`);\nif (fields.habitacion) bits.push(`Habitación: ${fields.habitacion}`);\nif (fields.plan) bits.push(`Plan: ${fields.plan}`);\nif (fields.pax) bits.push(`PAX: ${fields.pax}`);\nif (fields.monto) bits.push(`Monto: ${fields.monto}`);\nif (fields.pendiente) bits.push(`Pendiente: ${fields.pendiente}`);\nif (fields.forma_pago) bits.push(`Pago: ${fields.forma_pago}`);\nif (fields.destino) bits.push(`Destino: ${fields.destino}`);\nif (fields.asesora) bits.push(`Asesora: ${fields.asesora}`);\nif (fields.tel_asesora) bits.push(`Tel: ${fields.tel_asesora}`);\nif (fields.emitido) bits.push(`Emitido: ${fields.emitido}`);\n\nconst analysis = ok\n  ? JSON.stringify({ tipo: 'certificado_reserva', resumen_primera_hoja: true, ...fields })\n  : null;\n\nconst body = ok\n  ? (bits.length\n      ? `[Certificado] ${bits.join(' | ')}`\n      : `[Certificado] ${text.slice(0, 500)}`)\n  : (caption ? `[Documento no leido] ${caption}` : '[Documento no leido]');\n\nreturn [{\n  json: {\n    message_id: prep.message_id,\n    lead_id: prep.lead_id,\n    ok,\n    media_analysis: analysis,\n    media_signal: ok ? 'reserva' : 'ninguna',\n    body,\n    huesped: fields.huesped || '',\n    checkin: fields.checkin || '',\n    checkout: fields.checkout || '',\n  },\n}];\n"
       },
-      "id": "parse-cert",
+      "id": "7d61cacc-33d8-4f6b-a24c-acf9f7ad99ee",
       "name": "Parsear certificado",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2860,
-        -360
+        19696,
+        5536
       ]
     },
     {
@@ -1432,13 +1492,13 @@
         },
         "options": {}
       },
-      "id": "fallback-cert",
+      "id": "e90b4a91-3991-4b40-b546-912930c7da63",
       "name": "Fallback certificado",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2420,
-        -160
+        19184,
+        5728
       ]
     },
     {
@@ -1449,19 +1509,19 @@
           "queryReplacement": "={{ [$json.message_id, $json.body, $json.media_analysis, $json.media_signal] }}"
         }
       },
-      "id": "save-cert",
+      "id": "0f16bce8-a45f-45b6-81c7-b03d251949e6",
       "name": "Guardar certificado",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3080,
-        -280
+        19984,
+        5536
       ],
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -1471,7 +1531,7 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "loose",
+            "typeValidation": "strict",
             "version": 2
           },
           "conditions": [
@@ -1490,13 +1550,13 @@
         },
         "options": {}
       },
-      "id": "if-cert-ok",
+      "id": "c6371219-578d-4c6a-8842-cf1a9a764b99",
       "name": "Certificado ok?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3300,
-        -280
+        20208,
+        5536
       ]
     },
     {
@@ -1507,18 +1567,18 @@
           "queryReplacement": "={{ [$('Parsear certificado').first().json.lead_id, 'Certificado de reserva leido por Docling'] }}"
         }
       },
-      "id": "close-cert",
+      "id": "18b152dc-577d-4a42-9e73-f5528270b086",
       "name": "Cerrar por certificado",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3520,
-        -360
+        20432,
+        5536
       ],
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -1530,18 +1590,18 @@
           "queryReplacement": "={{ $('Parsear certificado').first().json.lead_id }}"
         }
       },
-      "id": "evt-cert",
+      "id": "b56eea5e-ff47-4da2-b950-980edf45b706",
       "name": "Registrar cierre certificado",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3740,
-        -360
+        20656,
+        5536
       ],
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     },
@@ -1552,13 +1612,13 @@
         "width": 480,
         "color": 6
       },
-      "id": "note-cert",
+      "id": "8593e20d-cd24-4164-91e5-4d0f1fbf38b5",
       "name": "Nota certificado",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1760,
-        -560
+        18512,
+        5296
       ]
     },
     {
@@ -1569,23 +1629,24 @@
           "queryReplacement": "={{ [$json.message_id, $json.body] }}"
         }
       },
-      "id": "save-cert-fail",
+      "id": "58c84591-0631-460f-b439-11a2c76dd611",
       "name": "Guardar cert fallido",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3080,
-        -80
+        19408,
+        5728
       ],
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "PEGAR_CRED_POSTGRES",
-          "name": "Postgres account"
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
         }
       }
     }
   ],
+  "pinData": {},
   "connections": {
     "Webhook Evolution": {
       "main": [
@@ -1646,7 +1707,7 @@
       "main": [
         [
           {
-            "node": "Es asesora?",
+            "node": "Consultar lista negra",
             "type": "main",
             "index": 0
           }
@@ -2218,8 +2279,7 @@
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     },
     "Cerrar por certificado": {
@@ -2232,6 +2292,52 @@
           }
         ]
       ]
+    },
+    "Consultar lista negra": {
+      "main": [
+        [
+          {
+            "node": "En lista negra?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "En lista negra?": {
+      "main": [
+        [
+          {
+            "node": "Solo lista negra sin score",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Es asesora?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
-  }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "gJZyX1xnl4AShH4c",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "1b472ec7-429e-4f57-a3ba-ff34b2918563",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ec13902ac809d3a6a2d7ce4fb05ce0f46787a81a4d9ba49f925f1acf40f46a4f"
+  },
+  "nodeGroups": [],
+  "id": "39prRF6uPB3OYYt4",
+  "tags": []
 }

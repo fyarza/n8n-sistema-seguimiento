@@ -41,7 +41,7 @@ Respuestas: `Dividir Mensaje` convierte Markdown→HTML Telegram (`<b>`, tablas 
 
 ## Flujo 03 — qué hace
 
-Guarda los dos lados del chat. Clasifica **texto del cliente** relevante (fechas, precios, habitación, reserva), **imágenes del cliente** con DeepSeek vision (`deepseek-flash`) y **audios del cliente** con Speaches (`[Audio] …`). Un comprobante (`media_signal=pago`) fuerza `concreto`. Cotización de la asesora (`OPCIONES DISPONIBLES`, formulario) marca `quoted_at`. No envía WhatsApp.
+Guarda los dos lados del chat. **Lista negra**: `team_phones.skip_followup=true` → solo guarda (sin Docling/LLM/score). Agregar/quitar números es solo SQL en BD (no hace falta reimportar el 03). Comerciales con `skip_followup=false` siguen el flujo (certificados/traspasos); los reportes del 01/05 los sacan del `%` pero los listan como traspaso. Clasifica **texto del cliente** relevante (fechas, precios, habitación, reserva), **imágenes del cliente** con DeepSeek vision (`deepseek-flash`) y **audios del cliente** con Speaches (`[Audio] …`). Un comprobante (`media_signal=pago`) fuerza `concreto`. Cotización de la asesora (`OPCIONES DISPONIBLES`, formulario) marca `quoted_at`. No envía WhatsApp.
 
 Para visión: crea una credencial **OpenAI** (no el nodo nativo DeepSeek) con la misma API key y Base URL `https://api.deepseek.com/v1`. El webhook de Evolution debe traer `server_url`, `instance` y `apikey` (el 03 los usa para `getBase64FromMediaMessage`). Si la media expiró, guarda `[Imagen no disponible]` y no rompe el flujo.
 

@@ -64,7 +64,7 @@ Reglas fijas encima del LLM: señales de pago/reserva fuerzan `concreto`; un `co
 
 ### Camino del 03
 
-Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta mensaje (idempotente) → si es la asesora: guarda (detecta cotización); si manda **PDF certificado**, Docling lee la 1ª hoja y guarda un **resumen** (huésped, fechas, habitación, monto) + fuerza `concreto` → si es **imagen del cliente**, Evolution baja el binario y DeepSeek vision (`deepseek-flash`) extrae `media_signal` → si es **audio del cliente**, Evolution baja el `ogg` y Speaches (Whisper self-hosted) deja el body como `[Audio] …` → historial 20 msgs → filtro de relevancia → si `relevante`, DeepSeek etapa + reglas → `lead_score_events`. Señal `pago` (comprobante) o certificado leído fuerza `concreto`. Texto sigue el mismo camino.
+Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta mensaje (idempotente) → actualiza contadores → si `team_phones.skip_followup` (**lista negra**), **corta** (guarda historial, sin Docling/LLM/score); el resto del equipo (`skip_followup=false`) **sigue el flujo** (certificados/traspasos) → si es la asesora: guarda (detecta cotización); si manda **PDF certificado**, Docling lee la 1ª hoja y guarda un **resumen** (huésped, fechas, habitación, monto) + fuerza `concreto` → si es **imagen del cliente**, Evolution baja el binario y DeepSeek vision (`deepseek-flash`) extrae `media_signal` → si es **audio del cliente**, Evolution baja el `ogg` y Speaches (Whisper self-hosted) deja el body como `[Audio] …` → historial 20 msgs → filtro de relevancia → si `relevante`, DeepSeek etapa + reglas → `lead_score_events`. Señal `pago` (comprobante) o certificado leído fuerza `concreto`. Texto sigue el mismo camino.
 
 ## Datos
 
@@ -72,7 +72,7 @@ Webhook → Normalizar (ignora grupos y status) → upsert `leads` → inserta m
 |-------|----------|
 | `followup_reminders` | Avisos comerciales (t3, day) y de llegada (arrival_16, arrival_20) |
 | `assistant_chat_messages` / `conversation_summaries` | Memoria del bot Telegram |
-| `team_phones` | Números del equipo de ventas (traspasos); fuera del % de captación |
+| `team_phones` | Internos fuera del %; `skip_followup=true` = lista negra del 03 (sin score). Se gestiona en BD |
 | `leads` | Un WhatsApp = un lead (etapa + scores) |
 | `whatsapp_messages` | Historial (incluye `from_me`, `media_analysis`, `media_signal`) |
 | `lead_score_events` | Auditoría de cada clasificación o silencio |
