@@ -35,7 +35,7 @@ Zona horaria: `America/Caracas`.
 
 ## Flujo 01 — voz Telegram
 
-Acepta texto o nota de voz (`voice` / `audio`). Si es voz: `record_voice` → descarga → Speaches (timeout 300s) → el agente recibe `[Audio] …`. Misma URL/Bearer que el 03 (`PEGAR_SPEACHES_API_KEY`). Si STT falla, aviso fijo (no se pega HTML del 502). DeepSeek Chat en prod: `maxTokens` 4904, temp `0.2`.
+Acepta texto o nota de voz (`voice` / `audio`). Si es voz: `record_voice` → descarga → Speaches (timeout 300s) → el agente recibe `[Audio] …`. URL y Bearer salen de `app_config` (`speaches_url`, `speaches_api_key`), las mismas claves del 03. Si STT falla, aviso fijo (no se pega HTML del 502). DeepSeek Chat en prod: `maxTokens` 4904, temp `0.2`.
 
 Respuestas: `Dividir Mensaje` convierte Markdown→HTML Telegram (`<b>`, tablas en `<pre>`, teléfonos en `<code>`), parte a ≤3500 y el loop envía con `typing` + Wait 1s. `parse_mode=HTML` (n8n por defecto fuerza Markdown y rompe con `_`/`*` → *can't parse entities*).
 
@@ -76,13 +76,18 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `listar_leads_reporte` | Listado: `concretaron` / `no_concretaron` / `traspasos` / `lista_negra` / `atendidos`. `origen` incluye `lista_negra` |
 | `listar_lista_negra` | Teléfonos con `skip_followup=true` (sin seguimiento WhatsApp) |
 | `gestionar_lista_negra` | `agregar` / `quitar` teléfono en lista negra (BD); al agregar anula scores del lead |
+| `listar_usuarios_asistente` | Solo `desarrollo`. Equipo completo y datos faltantes |
+| `gestionar_acceso_asistente` | Solo `desarrollo`. `autorizar` / `actualizar` reutiliza la fila y completa teléfono, rol y `active`. `revocar` apaga el acceso |
+| `gestionar_permisos_herramientas` | Solo `desarrollo`. `listar` / `conceder` / `revocar` en `assistant_tool_acl` |
+
+Las herramientas de administración no van conectadas al agente de un comercial o una asesora. El permiso de cada rol está en `assistant_tool_acl`. `assistant_tool_person` es la excepción de una persona: si `allowed` es false, esa persona no usa la herramienta aunque su rol sí. `assistant_may` aplica primero la persona y después el rol. Volver a correr `schema.sql` no devuelve un permiso de rol que ya se revocó y no borra las excepciones.
 | `consultar_ficha_lead` | Ficha de un teléfono/nombre: first_touch, certificados y avisos |
 | `enviar_grafica` | Tool Workflow: dispara el 05. `embudo_mes`, `reservas_dia` o `reservas_origen`. Estilo: `barras`, `pie`, `lineas` |
 | `generar_certificado_reserva` | Tool Workflow: dispara el 06. Arma HTML (plan fijo CON DESAYUNO, fecha Caracas) → Gotenberg → PDF al chat |
 
-`enviar_grafica` **no** es postgresTool. Tras importar, selecciona el workflow 05 (el JSON trae `PEGAR_ID_WORKFLOW_05`). QuickChart: `Config.quickchartUrl` en el 05 (`http://quickchart:80/chart` o `https://demo-quickchart.hiti0l.easypanel.host/chart`).
+`enviar_grafica` **no** es postgresTool. El id del workflow 05 está en `app_config.workflow_05_id`. QuickChart: `Config.quickchartUrl` en el 05 (`http://quickchart:80/chart` o `https://demo-quickchart.hiti0l.easypanel.host/chart`).
 
-`generar_certificado_reserva` tampoco es postgresTool. Tras importar, selecciona el workflow 06 (`PEGAR_ID_WORKFLOW_06`). Entradas: `nombre`, `cedula`, `pax`, `check_in`, `check_out`, `habitacion`, `monto_total_eur`, `pagos` (JSON array), `estado_pago`. Webhook de prueba: `POST /webhook/seguimientos-certificado`. Motor local: `plantilla-certificado/render-certificado.mjs`.
+`generar_certificado_reserva` tampoco es postgresTool. El id del workflow 06 está en `app_config.workflow_06_id`. Entradas: `nombre`, `cedula`, `pax`, `check_in`, `check_out`, `habitacion`, `monto_total_eur`, `pagos` (JSON array), `estado_pago`. Webhook de prueba: `POST /webhook/seguimientos-certificado`. Motor local: `plantilla-certificado/render-certificado.mjs`.
 
 ## Memoria del chat Telegram
 

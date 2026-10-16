@@ -140,7 +140,9 @@ INSERT INTO app_config (config_key, config_value) VALUES
   ('speaches_url', 'https://test-speaches.i3clpy.easypanel.host/v1/audio/transcriptions'),
   ('speaches_api_key', 'PEGAR_SPEACHES_API_KEY'),
   ('docling_url', 'https://test-docling.i3clpy.easypanel.host/v1/convert/file'),
-  ('docling_api_key', 'PEGAR_DOCLING_API_KEY')
+  ('docling_api_key', 'PEGAR_DOCLING_API_KEY'),
+  ('workflow_05_id', 'FdRJkLYuARcJ2C4p'),
+  ('workflow_06_id', 'PEGAR_ID_WORKFLOW_06')
 ON CONFLICT (config_key) DO NOTHING;
 
 -- Números del equipo de ventas / traspaso interno (no son captación del chat).
@@ -149,20 +151,37 @@ ON CONFLICT (config_key) DO NOTHING;
 -- Agregar números a la lista negra: solo BD, sin reimportar n8n.
 CREATE TABLE IF NOT EXISTS team_phones (
   id BIGSERIAL PRIMARY KEY,
-  phone TEXT NOT NULL,
+  phone TEXT,
   name TEXT NOT NULL DEFAULT '',
   team_tag TEXT NOT NULL DEFAULT 'equipo_ventas',
   active BOOLEAN NOT NULL DEFAULT true,
   skip_followup BOOLEAN NOT NULL DEFAULT false,
+  telegram_user_id BIGINT,
+  assistant_enabled BOOLEAN NOT NULL DEFAULT false,
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT team_phones_phone_digits CHECK (phone ~ '^[0-9]+$'),
+  CONSTRAINT team_phones_phone_digits CHECK (phone IS NULL OR phone ~ '^[0-9]+$'),
   UNIQUE (phone)
 );
 
 ALTER TABLE team_phones
   ADD COLUMN IF NOT EXISTS skip_followup BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE team_phones
+  ADD COLUMN IF NOT EXISTS telegram_user_id BIGINT;
+
+ALTER TABLE team_phones
+  ADD COLUMN IF NOT EXISTS assistant_enabled BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE team_phones ALTER COLUMN phone DROP NOT NULL;
+
+ALTER TABLE team_phones DROP CONSTRAINT IF EXISTS team_phones_phone_digits;
+ALTER TABLE team_phones
+  ADD CONSTRAINT team_phones_phone_digits CHECK (phone IS NULL OR phone ~ '^[0-9]+$');
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_team_phones_telegram_user
+  ON team_phones (telegram_user_id);
 
 CREATE INDEX IF NOT EXISTS idx_team_phones_active
   ON team_phones (phone)
@@ -172,7 +191,7 @@ CREATE INDEX IF NOT EXISTS idx_team_phones_skip_followup
   ON team_phones (phone)
   WHERE active AND skip_followup;
 
--- Seed confirmado (nombre + número). ON CONFLICT actualiza nombre/tag/lista negra si re-ejecutas.
+-- Seed solo si el teléfono no existe. Re-ejecutar no pisa nombre, tag, lista negra ni notas.
 INSERT INTO team_phones (phone, name, team_tag, skip_followup, notes) VALUES
   ('584127425397', 'Yoly Cuicas', 'equipo_ventas', false, 'Baywatch Reservas / traspasos'),
   ('584244208619', 'Yenny Morales', 'equipo_ventas', false, 'Hotel Baywatch Morrocoy'),
@@ -183,13 +202,118 @@ INSERT INTO team_phones (phone, name, team_tag, skip_followup, notes) VALUES
   ('584244676361', 'Jeannie Barrolleta', 'equipo_ventas', false, NULL),
   ('584144202819', 'Danielys Polanco', 'equipo_ventas', false, NULL),
   ('584124067967', 'Federico Yarza', 'desarrollo', true, 'Lista negra WhatsApp: pruebas / no es cliente')
-ON CONFLICT (phone) DO UPDATE SET
-  name = EXCLUDED.name,
-  team_tag = EXCLUDED.team_tag,
-  skip_followup = EXCLUDED.skip_followup,
-  notes = COALESCE(EXCLUDED.notes, team_phones.notes),
-  active = true,
-  updated_at = now();
+ON CONFLICT (phone) DO NOTHING;
+
+-- Acceso al asistente Telegram. Solo llena el id si todavía está vacío.
+-- 1829251309 Federico. 2139297228 Evelin. No reactiva assistant_enabled si ya lo apagaron.
+UPDATE team_phones
+SET telegram_user_id = 1829251309,
+    assistant_enabled = true,
+    updated_at = now()
+WHERE phone = '584124067967'
+  AND telegram_user_id IS NULL;
+
+INSERT INTO team_phones (
+  phone, name, team_tag, active, skip_followup, assistant_enabled, telegram_user_id, notes
+) VALUES (
+  '584244733047',
+  'Evelin Yarza',
+  'equipo_ventas',
+  true,
+  false,
+  true,
+  2139297228,
+  'Hotel Baywatch Morrocoy'
+)
+ON CONFLICT (phone) DO NOTHING;
+
+UPDATE team_phones
+SET telegram_user_id = 2139297228,
+    assistant_enabled = true,
+    updated_at = now()
+WHERE phone = '584244733047'
+  AND telegram_user_id IS NULL;
+
+-- Permisos de herramientas del asistente. Re-ejecutar no devuelve un permiso ya revocado.
+CREATE TABLE IF NOT EXISTS assistant_tool_acl (
+  team_tag TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  PRIMARY KEY (team_tag, tool_name)
+);
+
+-- Excepcion por persona. Si no hay fila, manda el permiso del rol.
+-- allowed=false le quita una herramienta a esa persona aunque su rol la tenga.
+CREATE TABLE IF NOT EXISTS assistant_tool_person (
+  team_phone_id BIGINT NOT NULL REFERENCES team_phones(id) ON DELETE CASCADE,
+  tool_name TEXT NOT NULL,
+  allowed BOOLEAN NOT NULL,
+  PRIMARY KEY (team_phone_id, tool_name)
+);
+
+CREATE OR REPLACE FUNCTION assistant_may(p_caller BIGINT, p_tool TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE(
+    (
+      SELECT ap.allowed
+      FROM team_phones me
+      JOIN assistant_tool_person ap
+        ON ap.team_phone_id = me.id
+       AND ap.tool_name = p_tool
+      WHERE me.telegram_user_id = p_caller
+        AND me.assistant_enabled
+      LIMIT 1
+    ),
+    EXISTS (
+      SELECT 1
+      FROM team_phones me
+      JOIN assistant_tool_acl acl
+        ON acl.team_tag = me.team_tag
+       AND acl.tool_name = p_tool
+      WHERE me.telegram_user_id = p_caller
+        AND me.assistant_enabled
+    )
+  );
+$$;
+
+INSERT INTO assistant_tool_acl (team_tag, tool_name)
+SELECT role.team_tag, tool.tool_name
+FROM (VALUES
+  ('desarrollo'),
+  ('equipo_ventas'),
+  ('asesora'),
+  ('asistente')
+) AS role(team_tag)
+CROSS JOIN (VALUES
+  ('crear_seguimiento'),
+  ('crear_seguimiento_llegada'),
+  ('listar_seguimientos'),
+  ('cancelar_seguimiento'),
+  ('estadisticas_leads_mes'),
+  ('enviar_grafica')
+) AS tool(tool_name)
+UNION ALL
+SELECT role.team_tag, tool.tool_name
+FROM (VALUES ('desarrollo'), ('equipo_ventas'), ('asesora')) AS role(team_tag)
+CROSS JOIN (VALUES
+  ('listar_leads_potenciales'),
+  ('listar_preguntan_sin_reservar'),
+  ('listar_leads_reporte'),
+  ('consultar_ficha_lead'),
+  ('generar_certificado_reserva')
+) AS tool(tool_name)
+UNION ALL
+SELECT 'desarrollo', tool.tool_name
+FROM (VALUES
+  ('listar_lista_negra'),
+  ('gestionar_lista_negra'),
+  ('gestionar_acceso_asistente'),
+  ('listar_usuarios_asistente'),
+  ('gestionar_permisos_herramientas')
+) AS tool(tool_name)
+ON CONFLICT (team_tag, tool_name) DO NOTHING;
 
 -- Undo false client scoring when internal numbers were treated as leads.
 UPDATE leads SET

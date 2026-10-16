@@ -279,6 +279,93 @@
         1072,
         144
       ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT assistant_may($1::bigint, 'enviar_grafica') AS permitido;",
+        "options": {
+          "queryReplacement": "={{ [$('Cuando lo llama el 01').first().json.telegram_chat_id] }}"
+        }
+      },
+      "id": "acl-enviar_grafi",
+      "name": "Puede usar herramienta?",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -480,
+        144
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "acl-ok",
+              "leftValue": "={{ ['t', 'true', '1', true, 1].includes($json.permitido) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "acl-if-enviar_grafi",
+      "name": "Es permitida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok",
+              "name": "ok",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "msg",
+              "name": "mensaje",
+              "value": "sin_permiso",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "acl-deny-enviar_grafi",
+      "name": "Sin permiso",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -16,
+        320
+      ]
     }
   ],
   "connections": {
@@ -286,7 +373,7 @@
       "main": [
         [
           {
-            "node": "Config",
+            "node": "Puede usar herramienta?",
             "type": "main",
             "index": 0
           }
@@ -382,6 +469,35 @@
         [
           {
             "node": "Respuesta a la tool",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Puede usar herramienta?": {
+      "main": [
+        [
+          {
+            "node": "Es permitida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es permitida?": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin permiso",
             "type": "main",
             "index": 0
           }
