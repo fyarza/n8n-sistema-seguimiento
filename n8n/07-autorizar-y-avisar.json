@@ -1,0 +1,245 @@
+{
+  "name": "Seguimientos: autorizar y avisar",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "accion"
+            },
+            {
+              "name": "telegram_user_id"
+            },
+            {
+              "name": "nombre"
+            },
+            {
+              "name": "caller_id"
+            },
+            {
+              "name": "phone"
+            },
+            {
+              "name": "team_tag"
+            },
+            {
+              "name": "active"
+            },
+            {
+              "name": "skip_followup"
+            },
+            {
+              "name": "notes"
+            }
+          ]
+        }
+      },
+      "id": "trig-acceso",
+      "name": "Cuando lo llama el 01",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -720,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH raw AS (\n  SELECT\n    lower(btrim(COALESCE($1::text, ''))) AS accion,\n    NULLIF(regexp_replace(COALESCE($2::text, ''), '[^0-9]', '', 'g'), '') AS telegram_digits,\n    NULLIF(btrim(COALESCE($3::text, '')), '') AS name_in,\n    NULLIF(regexp_replace(COALESCE($4::text, ''), '[^0-9]', '', 'g'), '')::bigint AS caller_id,\n    NULLIF(regexp_replace(COALESCE($5::text, ''), '[^0-9]', '', 'g'), '') AS phone_digits,\n    NULLIF(lower(btrim(COALESCE($6::text, ''))), '') AS team_tag,\n    CASE lower(btrim(COALESCE($7::text, '')))\n      WHEN 'true' THEN true WHEN 't' THEN true WHEN '1' THEN true\n      WHEN 'si' THEN true WHEN 'sí' THEN true WHEN 'yes' THEN true WHEN 'activo' THEN true\n      WHEN 'false' THEN false WHEN 'f' THEN false WHEN '0' THEN false\n      WHEN 'no' THEN false WHEN 'inactivo' THEN false\n      ELSE NULL\n    END AS active,\n    CASE lower(btrim(COALESCE($8::text, '')))\n      WHEN 'true' THEN true WHEN 't' THEN true WHEN '1' THEN true\n      WHEN 'si' THEN true WHEN 'sí' THEN true WHEN 'yes' THEN true\n      WHEN 'false' THEN false WHEN 'f' THEN false WHEN '0' THEN false\n      WHEN 'no' THEN false\n      ELSE NULL\n    END AS skip_followup,\n    NULLIF(btrim(COALESCE($9::text, '')), '') AS notes\n),\nparams AS (\n  SELECT\n    r.accion,\n    COALESCE(\n      r.telegram_digits::bigint,\n      (\n        SELECT q.telegram_user_id\n        FROM assistant_access_requests q\n        WHERE r.phone_digits IS NOT NULL\n          AND q.telegram_user_id = r.phone_digits::bigint\n      ),\n      (\n        SELECT t.phone::bigint\n        FROM team_phones t\n        WHERE r.telegram_digits IS NULL\n          AND r.phone_digits IS NOT NULL\n          AND t.phone = r.phone_digits\n          AND t.telegram_user_id IS NULL\n          AND t.phone !~ '^58'\n          AND t.phone !~ '^4'\n          AND char_length(t.phone) BETWEEN 6 AND 10\n      )\n    ) AS telegram_user_id,\n    COALESCE(\n      CASE\n        WHEN r.name_in IS NULL THEN NULL\n        WHEN lower(r.name_in) IN ('usuario telegram', 'lista negra') THEN NULL\n        ELSE r.name_in\n      END,\n      (\n        SELECT NULLIF(btrim(q.display_name), '')\n        FROM assistant_access_requests q\n        WHERE q.telegram_user_id = COALESCE(\n          r.telegram_digits::bigint,\n          CASE WHEN r.phone_digits IS NOT NULL THEN r.phone_digits::bigint END\n        )\n      )\n    ) AS name_raw,\n    r.caller_id,\n    CASE\n      WHEN r.phone_digits IS NULL THEN NULL\n      WHEN r.telegram_digits IS NOT NULL AND r.phone_digits = r.telegram_digits THEN NULL\n      WHEN EXISTS (\n        SELECT 1\n        FROM assistant_access_requests q\n        WHERE q.telegram_user_id = r.phone_digits::bigint\n      ) THEN NULL\n      WHEN r.phone_digits !~ '^58' AND r.phone_digits !~ '^4'\n        AND char_length(r.phone_digits) BETWEEN 6 AND 10\n        AND EXISTS (\n          SELECT 1 FROM team_phones t\n          WHERE t.phone = r.phone_digits AND t.telegram_user_id IS NULL\n        ) THEN NULL\n      ELSE r.phone_digits\n    END AS phone,\n    r.team_tag,\n    r.active,\n    r.skip_followup,\n    r.notes\n  FROM raw r\n),\ncaller AS (\n  SELECT 1\n  FROM team_phones d\n  CROSS JOIN params p\n  WHERE d.telegram_user_id = p.caller_id\n    AND d.team_tag = 'desarrollo'\n    AND d.assistant_enabled\n    AND assistant_may(p.caller_id, 'gestionar_acceso_asistente')\n),\nby_id AS (\n  SELECT t.id\n  FROM team_phones t\n  JOIN params p ON t.telegram_user_id = p.telegram_user_id\n  WHERE p.telegram_user_id IS NOT NULL\n),\nby_phone AS (\n  SELECT t.id\n  FROM team_phones t\n  JOIN params p ON t.phone = p.phone\n  WHERE p.phone IS NOT NULL\n    AND NOT EXISTS (SELECT 1 FROM by_id)\n),\nby_misplaced AS (\n  SELECT t.id\n  FROM team_phones t\n  JOIN params p ON t.phone = p.telegram_user_id::text\n  WHERE p.telegram_user_id IS NOT NULL\n    AND t.telegram_user_id IS NULL\n    AND NOT EXISTS (SELECT 1 FROM by_id)\n    AND NOT EXISTS (SELECT 1 FROM by_phone)\n),\nby_name AS (\n  SELECT t.id\n  FROM team_phones t\n  JOIN params p ON (\n    lower(btrim(t.name)) = lower(regexp_replace(btrim(p.name_raw), '[%_]', '', 'g'))\n    OR lower(btrim(t.name)) LIKE lower(regexp_replace(btrim(p.name_raw), '[%_]', '', 'g')) || ' %'\n  )\n  WHERE p.name_raw IS NOT NULL\n    AND char_length(regexp_replace(btrim(p.name_raw), '[%_]', '', 'g')) >= 3\n    AND NOT EXISTS (SELECT 1 FROM by_id)\n    AND NOT EXISTS (SELECT 1 FROM by_phone)\n    AND NOT EXISTS (SELECT 1 FROM by_misplaced)\n    AND (\n      t.telegram_user_id IS NULL\n      OR p.telegram_user_id IS NULL\n      OR t.telegram_user_id = p.telegram_user_id\n    )\n),\npicked AS (\n  SELECT id FROM by_id\n  UNION ALL SELECT id FROM by_phone\n  UNION ALL SELECT id FROM by_misplaced\n  UNION ALL SELECT id FROM by_name\n),\ngate AS (\n  SELECT CASE\n    WHEN NOT EXISTS (SELECT 1 FROM caller) THEN 'solo_desarrollador'\n    WHEN p.accion NOT IN (\n      'autorizar', 'agregar', 'alta', 'actualizar', 'completar',\n      'revocar', 'quitar', 'desactivar'\n    ) THEN 'accion_invalida'\n    WHEN p.accion IN ('revocar', 'quitar', 'desactivar') AND p.telegram_user_id IS NULL THEN 'id_invalido'\n    WHEN p.accion IN ('autorizar', 'agregar', 'alta', 'actualizar', 'completar')\n      AND p.telegram_user_id IS NULL AND p.phone IS NULL AND p.name_raw IS NULL THEN 'id_invalido'\n    WHEN p.team_tag IS NOT NULL AND p.team_tag NOT IN ('equipo_ventas', 'asesora', 'asistente') THEN 'tag_invalido'\n    WHEN (SELECT count(*) FROM by_name) > 1 THEN 'nombre_ambiguo'\n    WHEN EXISTS (\n      SELECT 1\n      FROM team_phones t\n      JOIN params px ON t.phone = px.phone\n      WHERE px.phone IS NOT NULL\n        AND EXISTS (SELECT 1 FROM by_id)\n        AND t.id <> (SELECT id FROM by_id LIMIT 1)\n    ) THEN 'telefono_en_uso'\n    WHEN EXISTS (\n      SELECT 1\n      FROM team_phones t\n      JOIN params px ON t.telegram_user_id = px.telegram_user_id\n      WHERE px.telegram_user_id IS NOT NULL\n        AND EXISTS (SELECT 1 FROM by_phone)\n        AND t.id <> (SELECT id FROM by_phone LIMIT 1)\n    ) THEN 'id_en_otra_persona'\n    WHEN (SELECT count(*) FROM picked) = 0\n      AND p.name_raw IS NOT NULL\n      AND EXISTS (\n        SELECT 1\n        FROM team_phones t\n        JOIN params px ON (\n          lower(btrim(t.name)) = lower(regexp_replace(btrim(px.name_raw), '[%_]', '', 'g'))\n          OR lower(btrim(t.name)) LIKE lower(regexp_replace(btrim(px.name_raw), '[%_]', '', 'g')) || ' %'\n        )\n        WHERE px.telegram_user_id IS NOT NULL\n          AND t.telegram_user_id IS NOT NULL\n          AND t.telegram_user_id <> px.telegram_user_id\n      ) THEN 'ya_tiene_otro_id'\n    ELSE NULL\n  END AS bloqueo\n  FROM params p\n),\nupdated AS (\n  UPDATE team_phones t SET\n    telegram_user_id = COALESCE(p.telegram_user_id, t.telegram_user_id),\n    assistant_enabled = true,\n    name = CASE\n      WHEN t.team_tag = 'desarrollo' OR p.name_raw IS NULL THEN t.name\n      WHEN lower(btrim(t.name)) LIKE lower(regexp_replace(btrim(p.name_raw), '[%_]', '', 'g')) || ' %' THEN t.name\n      WHEN t.name IN ('Usuario Telegram', 'Lista negra') THEN p.name_raw\n      WHEN char_length(btrim(p.name_raw)) >= char_length(btrim(t.name)) THEN p.name_raw\n      ELSE t.name\n    END,\n    phone = CASE\n      WHEN p.phone IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.phone\n      WHEN p.telegram_user_id IS NOT NULL AND t.phone = p.telegram_user_id::text THEN NULL\n      ELSE t.phone\n    END,\n    team_tag = CASE\n      WHEN p.team_tag IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.team_tag\n      ELSE t.team_tag\n    END,\n    active = CASE\n      WHEN p.active IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.active\n      ELSE t.active\n    END,\n    skip_followup = CASE\n      WHEN p.skip_followup IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.skip_followup\n      ELSE t.skip_followup\n    END,\n    notes = CASE\n      WHEN p.notes IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.notes\n      ELSE t.notes\n    END,\n    updated_at = now()\n  FROM params p\n  WHERE (SELECT bloqueo FROM gate) IS NULL\n    AND p.accion IN ('autorizar', 'agregar', 'alta', 'actualizar', 'completar')\n    AND (SELECT count(*) FROM picked) = 1\n    AND t.id = (SELECT id FROM picked LIMIT 1)\n  RETURNING\n    t.telegram_user_id, t.name, t.phone, t.team_tag, t.active, t.skip_followup,\n    t.assistant_enabled, 'actualizado'::text AS resultado\n),\ninserted AS (\n  INSERT INTO team_phones (\n    phone, name, team_tag, active, skip_followup, assistant_enabled, telegram_user_id, notes\n  )\n  SELECT\n    p.phone,\n    COALESCE(p.name_raw, 'Usuario Telegram'),\n    COALESCE(p.team_tag, 'asistente'),\n    COALESCE(p.active, false),\n    COALESCE(p.skip_followup, false),\n    true,\n    p.telegram_user_id,\n    COALESCE(p.notes, 'Alta desde el asistente')\n  FROM params p\n  WHERE (SELECT bloqueo FROM gate) IS NULL\n    AND p.accion IN ('autorizar', 'agregar', 'alta', 'actualizar', 'completar')\n    AND (SELECT count(*) FROM picked) = 0\n    AND (p.telegram_user_id IS NOT NULL OR p.phone IS NOT NULL)\n  RETURNING\n    telegram_user_id, name, phone, team_tag, active, skip_followup,\n    assistant_enabled, 'alta'::text AS resultado\n),\nrevoked AS (\n  UPDATE team_phones t SET\n    assistant_enabled = false,\n    updated_at = now()\n  FROM params p\n  WHERE (SELECT bloqueo FROM gate) IS NULL\n    AND p.accion IN ('revocar', 'quitar', 'desactivar')\n    AND p.telegram_user_id IS NOT NULL\n    AND t.telegram_user_id = p.telegram_user_id\n    AND t.team_tag <> 'desarrollo'\n  RETURNING\n    t.telegram_user_id, t.name, t.phone, t.team_tag, t.active, t.skip_followup,\n    t.assistant_enabled, 'revocado'::text AS resultado\n),\nblocked AS (\n  SELECT\n    p.telegram_user_id,\n    COALESCE(p.name_raw, '') AS name,\n    p.phone,\n    p.team_tag,\n    p.active,\n    p.skip_followup,\n    false AS assistant_enabled,\n    COALESCE(g.bloqueo, 'sin_cambios') AS resultado\n  FROM params p\n  CROSS JOIN gate g\n  WHERE NOT EXISTS (SELECT 1 FROM updated)\n    AND NOT EXISTS (SELECT 1 FROM inserted)\n    AND NOT EXISTS (SELECT 1 FROM revoked)\n),\ntouch_request AS (\n  UPDATE assistant_access_requests q\n  SET status = 'granted', updated_at = now()\n  WHERE q.telegram_user_id IN (\n    SELECT telegram_user_id FROM updated\n    UNION ALL\n    SELECT telegram_user_id FROM inserted\n  )\n  RETURNING q.telegram_user_id\n)\nSELECT telegram_user_id, name, phone, team_tag, active, skip_followup, assistant_enabled, resultado FROM updated\nUNION ALL\nSELECT telegram_user_id, name, phone, team_tag, active, skip_followup, assistant_enabled, resultado FROM inserted\nUNION ALL\nSELECT telegram_user_id, name, phone, team_tag, active, skip_followup, assistant_enabled, resultado FROM revoked\nUNION ALL\nSELECT telegram_user_id, name, phone, team_tag, active, skip_followup, assistant_enabled, resultado FROM blocked;",
+        "options": {
+          "queryReplacement": "={{ $json.accion }},={{ $json.telegram_user_id }},={{ $json.nombre }},={{ $json.caller_id }},={{ $json.phone }},={{ $json.team_tag }},={{ $json.active }},={{ $json.skip_followup }},={{ $json.notes }}"
+        }
+      },
+      "id": "aplicar-acceso",
+      "name": "Aplicar acceso",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -400,
+        160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $('Aplicar acceso').all().map((item) => item.json);\nconst grant = rows.find((row) => ['alta', 'actualizado'].includes(String(row.resultado)) && row.telegram_user_id);\nif (!grant) return [{ json: { avisar: false } }];\nconst name = String(grant.name || '').trim();\nconst safe = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst text = safe && safe !== 'Usuario Telegram'\n  ? `Listo, ${safe}. Ya puedes usar el asistente. Escribe de nuevo lo que necesitas.`\n  : 'Listo. Ya puedes usar el asistente. Escribe de nuevo lo que necesitas.';\nreturn [{ json: { avisar: true, chatId: String(grant.telegram_user_id), text } }];"
+      },
+      "id": "preparar-aviso-acceso",
+      "name": "Preparar aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "avisar-acceso",
+              "leftValue": "={{ $json.avisar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hay-aviso-acceso",
+      "name": "Hay aviso?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "avisar-persona",
+      "name": "Avisar persona",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        320,
+        64
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "hrOL07XlEUKRSsxC",
+          "name": "eve_leads_bot"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $('Aplicar acceso').all().map((item) => item.json);\nlet sent = false;\ntry {\n  const telegram = $('Avisar persona');\n  sent = Boolean(telegram.isExecuted) && !telegram.first()?.json?.error;\n} catch (error) {\n  sent = false;\n}\nconst source = rows.length ? rows : [{ resultado: 'sin_cambios' }];\nreturn source.map((row) => ({\n  json: {\n    ...row,\n    aviso: ['alta', 'actualizado'].includes(String(row.resultado))\n      ? (sent ? 'enviado' : 'no_enviado')\n      : 'no_aplica',\n  },\n}));"
+      },
+      "id": "devolver-acceso",
+      "name": "Devolver filas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Autorizar y avisar\nLo llama gestionar_acceso_asistente del flujo 01.\n\n1. Importa este flujo y publicalo.\n2. Copia su id.\n3. UPDATE app_config SET config_value = '<id>' WHERE config_key = 'workflow_07_id';\n4. Reimporta el 01.\n\nEl alta usa assistant_access_requests si el nombre no viene. El id de Telegram no se guarda como telefono. Si el alta o la actualizacion tiene telegram_user_id, este flujo manda el aviso.",
+        "height": 280,
+        "width": 420
+      },
+      "id": "nota-acceso",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -180
+      ]
+    }
+  ],
+  "connections": {
+    "Cuando lo llama el 01": {
+      "main": [
+        [
+          {
+            "node": "Aplicar acceso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar acceso": {
+      "main": [
+        [
+          {
+            "node": "Preparar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar aviso": {
+      "main": [
+        [
+          {
+            "node": "Hay aviso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay aviso?": {
+      "main": [
+        [
+          {
+            "node": "Avisar persona",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Devolver filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar persona": {
+      "main": [
+        [
+          {
+            "node": "Devolver filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -142,8 +142,20 @@ INSERT INTO app_config (config_key, config_value) VALUES
   ('docling_url', 'https://test-docling.i3clpy.easypanel.host/v1/convert/file'),
   ('docling_api_key', 'PEGAR_DOCLING_API_KEY'),
   ('workflow_05_id', 'FdRJkLYuARcJ2C4p'),
-  ('workflow_06_id', 'PEGAR_ID_WORKFLOW_06')
+  ('workflow_06_id', 'PEGAR_ID_WORKFLOW_06'),
+  ('workflow_07_id', 'PEGAR_ID_WORKFLOW_07')
 ON CONFLICT (config_key) DO NOTHING;
+
+-- Solicitud pendiente de acceso. La escribe el flujo 01 cuando alguien no autorizado
+-- escribe al bot. autorizar la usa si el desarrollador no repite el nombre.
+CREATE TABLE IF NOT EXISTS assistant_access_requests (
+  telegram_user_id BIGINT PRIMARY KEY,
+  display_name TEXT NOT NULL DEFAULT '',
+  username TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- Números del equipo de ventas / traspaso interno (no son captación del chat).
 -- Mantener con INSERT/UPDATE; los reportes excluyen active=true del % de conversión.

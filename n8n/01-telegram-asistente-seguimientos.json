@@ -168,7 +168,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst todayIso = now.toISODate();\nconst year = now.year;\nconst access = $('Consultar acceso').first().json || {};\nconst callerTag = String(access.caller_tag || '');\nconst callerName = String(access.caller_name || '');\nconst systemMessage = [\n  'Eres un asistente de seguimientos en Telegram. Respondes en español, breve y claro.',\n  callerName ? `Quien escribe: ${callerName}. Rol: ${callerTag || 'sin rol'}.` : 'Quien escribe no tiene rol en team_phones.',\n  'Zona horaria fija: America/Caracas.',\n  'Cuando la ficha trae un evento certificado, el detalle YA es un resumen de la primera hoja (huésped, cédula, check-in/out, habitación, plan, PAX, monto, forma de pago). Úsalo tal cual; no pidas el PDF.',\n  ...(callerTag === 'desarrollo' ? ['Eres desarrollo. Solo tu puedes autorizar personas, completar fichas y cambiar permisos. gestionar_acceso_asistente no duplica filas y completa phone, team_tag, active y skip_followup solo con lo que te digan. listar_usuarios_asistente muestra fichas. gestionar_permisos_herramientas lista, concede o revoca. Si el desarrollador nombra a una persona, el cambio es solo de esa persona (persona), no del rol. accion solo deja a esa persona exactamente con las tool_name separadas por coma y bloquea el resto, aunque su rol las tenga. Sin persona, team_tag cambia a todo equipo_ventas, asesora o asistente. listar_lista_negra y gestionar_lista_negra administran la lista negra. No le digas a otra persona que estas herramientas existen. Si el cambio es de una persona y tiene telegram_user_id, en el mismo turno llama avisar_permiso una sola vez con ese id y un mensaje corto del permiso que quedo (acceso al asistente o herramientas). Si el cambio es de todo un rol, no la llames. Si no tiene telegram_user_id, no la llames.'] : []),\n  'Origen de cierres WhatsApp: nuevo, recurrente real, o traspaso (team_phones con skip_followup=false). La lista negra no entra en estadisticas ni graficas. Los traspasos son venta del equipo: reportalos aparte y no los mezcles en el % de conversion.',\n  'Hay DOS productos. No los mezcles:',\n  '1) Seguimiento comercial: si NO menciona llegada, check-in ni \"cuando llegue\", usa crear_seguimiento. Son DOS avisos a las 10:00: t3 (3 días antes) y day (el mismo día).',\n  '2) Seguimiento de llegada: si menciona llegada, check-in o \"cuando llegue\", usa crear_seguimiento_llegada. Son DOS avisos el MISMO día indicado: 16:00 y 20:00. NO crees t3 ni day. NO uses crear_seguimiento.',\n  'Tú NO calculas esas horas: pasa nombre, teléfono y fecha YYYY-MM-DD a la tool correcta.',\n  `Hoy en Venezuela: ${todayIso} (${now.toFormat('cccc d LLLL yyyy, HH:mm')}). Año vigente: ${year}. Mes de reportes por defecto: ${now.toFormat('yyyy-MM')}.`,\n  'Reglas de fecha (obligatorias):',\n  `- Si el cliente manda un rango (ej. \"28/08 al 30/08\", \"del 28 al 30\", \"28-30/08\", \"28/08 - 30/08\"), usa SOLO la PRIMERA fecha como estimated_date. Ignora la fecha final del rango.`,\n  `- Si el cliente manda día y mes sin año (28/08, 28-08, 28 de agosto), completa el año con el año vigente de Venezuela (${year}). No preguntes el año.`,\n  '- estimated_date para la herramienta SIEMPRE en formato YYYY-MM-DD, con ese año vigente.',\n  `- Ejemplo: hoy es ${todayIso} y el mensaje dice \"Fecha de reserva: 28/08 al 30/08\" → estimated_date = ${year}-08-28.`,\n  'Si falta nombre, teléfono o cualquier fecha, pregunta. Si dice \"el viernes\" u otra fecha relativa, confirma el YYYY-MM-DD usando la fecha de hoy en Venezuela.',\n  'Antes de crear, resume los datos (incluyendo la fecha YYYY-MM-DD que vas a usar) y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes. El campo tipo distingue comercial (T-3 / día 10:00) de llegada (16:00 / 20:00).',\n  'Para cancelar llama cancelar_seguimiento con nombre o teléfono Y tipo: llegada, comercial o todos.',\n  '- Si pide cancelar la llegada o check-in, tipo=llegada (no borres t3/day).',\n  '- Si pide cancelar el seguimiento comercial / el de las 10:00, tipo=comercial (no borres arrival_16/arrival_20).',\n  '- tipo=todos SOLO si pide borrar todas las alertas de ese cliente.',\n  'Si pide grafica, chart, barras, torta, pie, lineas o rendimiento visual, usa enviar_grafica. No inventes numeros ni pegues URLs de imagen en el texto.',\n  'Si pide generar/crear/emitir un certificado o confirmacion de reserva en PDF, usa generar_certificado_reserva. Plan fijo CON DESAYUNO; fecha de emision automatica (Caracas). Antes confirma nombre, cedula, pax, check_in/out, habitacion, monto y pagos. pagos va como JSON. La tool manda el PDF a Telegram; confirma en texto corto. Antes de llamarla pregunta que asesora firma. Si caller_tag es equipo_ventas o asesora, sugiere caller_name y espera confirmacion. Si no eres de ventas, pregunta quien firma y no uses un nombre por defecto. Pasa solo ese nombre; el telefono sale de team_phones.',\n  'enviar_grafica: tipo embudo_mes (etapas), reservas_dia (eje X = dias, series nuevos y recurrentes) o reservas_origen (nuevos vs recurrentes del mes). estilo barras, pie o lineas; si no dicen, barras. pie no aplica por dia; lineas solo por dia. periodo YYYY-MM; si no dicen mes, mes Venezuela.',\n  'La tool manda la foto a Telegram. Tu solo confirmas en texto corto que ya salio la grafica.',\n  'También consultas el embudo de WhatsApp. Un mismo teléfono puede reservar en varios meses: concretaron/reservaron = cierre EN ESE MES (certificado o primer concreto), NO el primer mensaje. Si origen=recurrente, empezó antes y volvió a cerrar: SÍ entra en el mes. Si piden revisar un cliente (nombre o teléfono) usa consultar_ficha_lead y resume first_touch, primer concreto y cada certificado. Para listados por NOMBRE usa listar_leads_reporte (tipo: concretaron, no_concretaron o atendidos). Siempre pasa periodo del mes actual Venezuela (YYYY-MM) salvo que pidan otro mes. estadisticas_leads_mes: reservaron incluye recurrentes; reservaron_recurrentes los separa; pct_reservaciones es solo conversaciones NUEVAS de ese mes que cerraron. Si piden clientes potenciales o difusión, usa listar_leads_potenciales y muestra SIEMPRE nombre, teléfono, etapa y scores (potencial, engagement, cierre, silencio). listar_preguntan_sin_reservar es los que preguntan mucho.',\n  'No inventes teléfonos, scores ni porcentajes: si la tool no trae filas, dilo. No ofrezcas enviar la difusión tú; solo lista y resume.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nlet voiceText = '';\ntry {\n  voiceText = String(($('Texto voz').first().json || {}).text || '').replace(/\\s+/g, ' ').trim();\n} catch (e) {\n  voiceText = '';\n}\nconst chatInput = voiceText\n  ? `[Audio] ${voiceText}`\n  : String(msg.text || '').trim();\nif (!chatInput) {\n  return [];\n}\nreturn [{\n  json: {\n    chatInput,\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n    todayIso,\n    year,\n  },\n}];\n"
+        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst todayIso = now.toISODate();\nconst year = now.year;\nconst access = $('Consultar acceso').first().json || {};\nconst callerTag = String(access.caller_tag || '');\nconst callerName = String(access.caller_name || '');\nconst systemMessage = [\n  'Eres un asistente de seguimientos en Telegram. Respondes en español, breve y claro.',\n  callerName ? `Quien escribe: ${callerName}. Rol: ${callerTag || 'sin rol'}.` : 'Quien escribe no tiene rol en team_phones.',\n  'Zona horaria fija: America/Caracas.',\n  'Cuando la ficha trae un evento certificado, el detalle YA es un resumen de la primera hoja (huésped, cédula, check-in/out, habitación, plan, PAX, monto, forma de pago). Úsalo tal cual; no pidas el PDF.',\n  ...(callerTag === 'desarrollo' ? ['Eres desarrollo. Solo tu puedes autorizar personas, completar fichas y cambiar permisos. gestionar_acceso_asistente no duplica filas y completa phone, team_tag, active y skip_followup solo con lo que te digan. listar_usuarios_asistente muestra fichas. gestionar_permisos_herramientas lista, concede o revoca. Si el desarrollador nombra a una persona, el cambio es solo de esa persona (persona), no del rol. accion solo deja a esa persona exactamente con las tool_name separadas por coma y bloquea el resto, aunque su rol las tenga. Sin persona, team_tag cambia a todo equipo_ventas, asesora o asistente. listar_lista_negra y gestionar_lista_negra administran la lista negra. No le digas a otra persona que estas herramientas existen. gestionar_acceso_asistente ya envia el aviso cuando el resultado trae telegram_user_id y aviso es enviado. No llames avisar_permiso por un alta de acceso y no digas que faltaba el id. Para un cambio de herramientas de una persona, si el resultado trae telegram_user_id, llama avisar_permiso una sola vez con ese id y un mensaje corto. Si el cambio es de todo un rol, no la llames.'] : []),\n  'Origen de cierres WhatsApp: nuevo, recurrente real, o traspaso (team_phones con skip_followup=false). La lista negra no entra en estadisticas ni graficas. Los traspasos son venta del equipo: reportalos aparte y no los mezcles en el % de conversion.',\n  'Hay DOS productos. No los mezcles:',\n  '1) Seguimiento comercial: si NO menciona llegada, check-in ni \"cuando llegue\", usa crear_seguimiento. Son DOS avisos a las 10:00: t3 (3 días antes) y day (el mismo día).',\n  '2) Seguimiento de llegada: si menciona llegada, check-in o \"cuando llegue\", usa crear_seguimiento_llegada. Son DOS avisos el MISMO día indicado: 16:00 y 20:00. NO crees t3 ni day. NO uses crear_seguimiento.',\n  'Tú NO calculas esas horas: pasa nombre, teléfono y fecha YYYY-MM-DD a la tool correcta.',\n  `Hoy en Venezuela: ${todayIso} (${now.toFormat('cccc d LLLL yyyy, HH:mm')}). Año vigente: ${year}. Mes de reportes por defecto: ${now.toFormat('yyyy-MM')}.`,\n  'Reglas de fecha (obligatorias):',\n  `- Si el cliente manda un rango (ej. \"28/08 al 30/08\", \"del 28 al 30\", \"28-30/08\", \"28/08 - 30/08\"), usa SOLO la PRIMERA fecha como estimated_date. Ignora la fecha final del rango.`,\n  `- Si el cliente manda día y mes sin año (28/08, 28-08, 28 de agosto), completa el año con el año vigente de Venezuela (${year}). No preguntes el año.`,\n  '- estimated_date para la herramienta SIEMPRE en formato YYYY-MM-DD, con ese año vigente.',\n  `- Ejemplo: hoy es ${todayIso} y el mensaje dice \"Fecha de reserva: 28/08 al 30/08\" → estimated_date = ${year}-08-28.`,\n  'Si falta nombre, teléfono o cualquier fecha, pregunta. Si dice \"el viernes\" u otra fecha relativa, confirma el YYYY-MM-DD usando la fecha de hoy en Venezuela.',\n  'Antes de crear, resume los datos (incluyendo la fecha YYYY-MM-DD que vas a usar) y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes. El campo tipo distingue comercial (T-3 / día 10:00) de llegada (16:00 / 20:00).',\n  'Para cancelar llama cancelar_seguimiento con nombre o teléfono Y tipo: llegada, comercial o todos.',\n  '- Si pide cancelar la llegada o check-in, tipo=llegada (no borres t3/day).',\n  '- Si pide cancelar el seguimiento comercial / el de las 10:00, tipo=comercial (no borres arrival_16/arrival_20).',\n  '- tipo=todos SOLO si pide borrar todas las alertas de ese cliente.',\n  'Si pide grafica, chart, barras, torta, pie, lineas o rendimiento visual, usa enviar_grafica. No inventes numeros ni pegues URLs de imagen en el texto.',\n  'Si pide generar/crear/emitir un certificado o confirmacion de reserva en PDF, usa generar_certificado_reserva. Plan fijo CON DESAYUNO; fecha de emision automatica (Caracas). Antes confirma nombre, cedula, pax, check_in/out, habitacion, monto y pagos. pagos va como JSON. La tool manda el PDF a Telegram; confirma en texto corto. Antes de llamarla pregunta que asesora firma. Si caller_tag es equipo_ventas o asesora, sugiere caller_name y espera confirmacion. Si no eres de ventas, pregunta quien firma y no uses un nombre por defecto. Pasa solo ese nombre; el telefono sale de team_phones.',\n  'enviar_grafica: tipo embudo_mes (etapas), reservas_dia (eje X = dias, series nuevos y recurrentes) o reservas_origen (nuevos vs recurrentes del mes). estilo barras, pie o lineas; si no dicen, barras. pie no aplica por dia; lineas solo por dia. periodo YYYY-MM; si no dicen mes, mes Venezuela.',\n  'La tool manda la foto a Telegram. Tu solo confirmas en texto corto que ya salio la grafica.',\n  'También consultas el embudo de WhatsApp. Un mismo teléfono puede reservar en varios meses: concretaron/reservaron = cierre EN ESE MES (certificado o primer concreto), NO el primer mensaje. Si origen=recurrente, empezó antes y volvió a cerrar: SÍ entra en el mes. Si piden revisar un cliente (nombre o teléfono) usa consultar_ficha_lead y resume first_touch, primer concreto y cada certificado. Para listados por NOMBRE usa listar_leads_reporte (tipo: concretaron, no_concretaron o atendidos). Siempre pasa periodo del mes actual Venezuela (YYYY-MM) salvo que pidan otro mes. estadisticas_leads_mes: reservaron incluye recurrentes; reservaron_recurrentes los separa; pct_reservaciones es solo conversaciones NUEVAS de ese mes que cerraron. Si piden clientes potenciales o difusión, usa listar_leads_potenciales y muestra SIEMPRE nombre, teléfono, etapa y scores (potencial, engagement, cierre, silencio). listar_preguntan_sin_reservar es los que preguntan mucho.',\n  'No inventes teléfonos, scores ni porcentajes: si la tool no trae filas, dilo. No ofrezcas enviar la difusión tú; solo lista y resume.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nlet voiceText = '';\ntry {\n  voiceText = String(($('Texto voz').first().json || {}).text || '').replace(/\\s+/g, ' ').trim();\n} catch (e) {\n  voiceText = '';\n}\nconst chatInput = voiceText\n  ? `[Audio] ${voiceText}`\n  : String(msg.text || '').trim();\nif (!chatInput) {\n  return [];\n}\nreturn [{\n  json: {\n    chatInput,\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n    todayIso,\n    year,\n  },\n}];\n"
       },
       "id": "075d9b2a-c06d-4799-916e-977bc97a8ba0",
       "name": "Preparar input",
@@ -1412,28 +1412,122 @@
     },
     {
       "parameters": {
-        "descriptionType": "manual",
-        "toolDescription": "Autoriza, completa o revoca una persona sin duplicarla. accion: autorizar, actualizar o revocar. Busca primero por telegram_user_id, luego por phone y luego por nombre. Si ya existe, actualiza esa fila. Si no existe, inserta una. phone: solo digitos, vacio si no lo dijeron. team_tag: equipo_ventas, asesora o asistente; vacio si no lo dijeron. active: true si entra al seguimiento WhatsApp; vacio si no lo dijeron. skip_followup: true solo si piden lista negra. notes opcional. Solo el rol desarrollo. No modifica la fila del desarrollador.",
-        "operation": "executeQuery",
-        "query": "WITH params AS (\n  SELECT\n    lower(btrim(COALESCE($1::text, ''))) AS accion,\n    NULLIF(regexp_replace(COALESCE($2::text, ''), '[^0-9]', '', 'g'), '')::bigint AS telegram_user_id,\n    NULLIF(btrim(COALESCE($3::text, '')), '') AS name_raw,\n    NULLIF(regexp_replace(COALESCE($4::text, ''), '[^0-9]', '', 'g'), '')::bigint AS caller_id,\n    NULLIF(regexp_replace(COALESCE($5::text, ''), '[^0-9]', '', 'g'), '') AS phone,\n    NULLIF(lower(btrim(COALESCE($6::text, ''))), '') AS team_tag,\n    CASE lower(btrim(COALESCE($7::text, '')))\n      WHEN 'true' THEN true WHEN 't' THEN true WHEN '1' THEN true\n      WHEN 'si' THEN true WHEN 'sí' THEN true WHEN 'yes' THEN true WHEN 'activo' THEN true\n      WHEN 'false' THEN false WHEN 'f' THEN false WHEN '0' THEN false\n      WHEN 'no' THEN false WHEN 'inactivo' THEN false\n      ELSE NULL\n    END AS active,\n    CASE lower(btrim(COALESCE($8::text, '')))\n      WHEN 'true' THEN true WHEN 't' THEN true WHEN '1' THEN true\n      WHEN 'si' THEN true WHEN 'sí' THEN true WHEN 'yes' THEN true\n      WHEN 'false' THEN false WHEN 'f' THEN false WHEN '0' THEN false\n      WHEN 'no' THEN false\n      ELSE NULL\n    END AS skip_followup,\n    NULLIF(btrim(COALESCE($9::text, '')), '') AS notes\n),\ncaller AS (\n  SELECT 1\n  FROM team_phones d\n  CROSS JOIN params p\n  WHERE d.telegram_user_id = p.caller_id\n    AND d.team_tag = 'desarrollo'\n    AND d.assistant_enabled\n    AND assistant_may(p.caller_id, 'gestionar_acceso_asistente')\n),\nby_id AS (\n  SELECT t.id\n  FROM team_phones t\n  JOIN params p ON t.telegram_user_id = p.telegram_user_id\n  WHERE p.telegram_user_id IS NOT NULL\n),\nby_phone AS (\n  SELECT t.id\n  FROM team_phones t\n  JOIN params p ON t.phone = p.phone\n  WHERE p.phone IS NOT NULL\n    AND NOT EXISTS (SELECT 1 FROM by_id)\n),\nby_name AS (\n  SELECT t.id\n  FROM team_phones t\n  JOIN params p ON (\n    lower(btrim(t.name)) = lower(regexp_replace(btrim(p.name_raw), '[%_]', '', 'g'))\n    OR lower(btrim(t.name)) LIKE lower(regexp_replace(btrim(p.name_raw), '[%_]', '', 'g')) || ' %'\n  )\n  WHERE p.name_raw IS NOT NULL\n    AND char_length(regexp_replace(btrim(p.name_raw), '[%_]', '', 'g')) >= 3\n    AND NOT EXISTS (SELECT 1 FROM by_id)\n    AND NOT EXISTS (SELECT 1 FROM by_phone)\n    AND (\n      t.telegram_user_id IS NULL\n      OR p.telegram_user_id IS NULL\n      OR t.telegram_user_id = p.telegram_user_id\n    )\n),\npicked AS (\n  SELECT id FROM by_id\n  UNION ALL SELECT id FROM by_phone\n  UNION ALL SELECT id FROM by_name\n),\ngate AS (\n  SELECT CASE\n    WHEN NOT EXISTS (SELECT 1 FROM caller) THEN 'solo_desarrollador'\n    WHEN p.accion NOT IN (\n      'autorizar', 'agregar', 'alta', 'actualizar', 'completar',\n      'revocar', 'quitar', 'desactivar'\n    ) THEN 'accion_invalida'\n    WHEN p.accion IN ('revocar', 'quitar', 'desactivar') AND p.telegram_user_id IS NULL THEN 'id_invalido'\n    WHEN p.accion IN ('autorizar', 'agregar', 'alta', 'actualizar', 'completar')\n      AND p.telegram_user_id IS NULL AND p.phone IS NULL AND p.name_raw IS NULL THEN 'id_invalido'\n    WHEN p.team_tag IS NOT NULL AND p.team_tag NOT IN ('equipo_ventas', 'asesora', 'asistente') THEN 'tag_invalido'\n    WHEN (SELECT count(*) FROM by_name) > 1 THEN 'nombre_ambiguo'\n    WHEN EXISTS (\n      SELECT 1\n      FROM team_phones t\n      JOIN params px ON t.phone = px.phone\n      WHERE px.phone IS NOT NULL\n        AND EXISTS (SELECT 1 FROM by_id)\n        AND t.id <> (SELECT id FROM by_id LIMIT 1)\n    ) THEN 'telefono_en_uso'\n    WHEN EXISTS (\n      SELECT 1\n      FROM team_phones t\n      JOIN params px ON t.telegram_user_id = px.telegram_user_id\n      WHERE px.telegram_user_id IS NOT NULL\n        AND EXISTS (SELECT 1 FROM by_phone)\n        AND t.id <> (SELECT id FROM by_phone LIMIT 1)\n    ) THEN 'id_en_otra_persona'\n    WHEN (SELECT count(*) FROM picked) = 0\n      AND p.name_raw IS NOT NULL\n      AND EXISTS (\n        SELECT 1\n        FROM team_phones t\n        JOIN params px ON (\n          lower(btrim(t.name)) = lower(regexp_replace(btrim(px.name_raw), '[%_]', '', 'g'))\n          OR lower(btrim(t.name)) LIKE lower(regexp_replace(btrim(px.name_raw), '[%_]', '', 'g')) || ' %'\n        )\n        WHERE px.telegram_user_id IS NOT NULL\n          AND t.telegram_user_id IS NOT NULL\n          AND t.telegram_user_id <> px.telegram_user_id\n      ) THEN 'ya_tiene_otro_id'\n    ELSE NULL\n  END AS bloqueo\n  FROM params p\n),\nupdated AS (\n  UPDATE team_phones t SET\n    telegram_user_id = COALESCE(p.telegram_user_id, t.telegram_user_id),\n    assistant_enabled = true,\n    name = CASE\n      WHEN t.team_tag = 'desarrollo' OR p.name_raw IS NULL THEN t.name\n      WHEN lower(btrim(t.name)) LIKE lower(regexp_replace(btrim(p.name_raw), '[%_]', '', 'g')) || ' %' THEN t.name\n      WHEN t.name IN ('Usuario Telegram', 'Lista negra') THEN p.name_raw\n      WHEN char_length(btrim(p.name_raw)) >= char_length(btrim(t.name)) THEN p.name_raw\n      ELSE t.name\n    END,\n    phone = CASE\n      WHEN p.phone IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.phone\n      ELSE t.phone\n    END,\n    team_tag = CASE\n      WHEN p.team_tag IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.team_tag\n      ELSE t.team_tag\n    END,\n    active = CASE\n      WHEN p.active IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.active\n      ELSE t.active\n    END,\n    skip_followup = CASE\n      WHEN p.skip_followup IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.skip_followup\n      ELSE t.skip_followup\n    END,\n    notes = CASE\n      WHEN p.notes IS NOT NULL AND t.team_tag <> 'desarrollo' THEN p.notes\n      ELSE t.notes\n    END,\n    updated_at = now()\n  FROM params p\n  WHERE (SELECT bloqueo FROM gate) IS NULL\n    AND p.accion IN ('autorizar', 'agregar', 'alta', 'actualizar', 'completar')\n    AND (SELECT count(*) FROM picked) = 1\n    AND t.id = (SELECT id FROM picked LIMIT 1)\n  RETURNING\n    t.telegram_user_id, t.name, t.phone, t.team_tag, t.active, t.skip_followup,\n    t.assistant_enabled, 'actualizado'::text AS resultado\n),\ninserted AS (\n  INSERT INTO team_phones (\n    phone, name, team_tag, active, skip_followup, assistant_enabled, telegram_user_id, notes\n  )\n  SELECT\n    p.phone,\n    COALESCE(p.name_raw, 'Usuario Telegram'),\n    COALESCE(p.team_tag, 'asistente'),\n    COALESCE(p.active, false),\n    COALESCE(p.skip_followup, false),\n    true,\n    p.telegram_user_id,\n    COALESCE(p.notes, 'Alta desde el asistente')\n  FROM params p\n  WHERE (SELECT bloqueo FROM gate) IS NULL\n    AND p.accion IN ('autorizar', 'agregar', 'alta', 'actualizar', 'completar')\n    AND (SELECT count(*) FROM picked) = 0\n    AND (p.telegram_user_id IS NOT NULL OR p.phone IS NOT NULL)\n  RETURNING\n    telegram_user_id, name, phone, team_tag, active, skip_followup,\n    assistant_enabled, 'alta'::text AS resultado\n),\nrevoked AS (\n  UPDATE team_phones t SET\n    assistant_enabled = false,\n    updated_at = now()\n  FROM params p\n  WHERE (SELECT bloqueo FROM gate) IS NULL\n    AND p.accion IN ('revocar', 'quitar', 'desactivar')\n    AND p.telegram_user_id IS NOT NULL\n    AND t.telegram_user_id = p.telegram_user_id\n    AND t.team_tag <> 'desarrollo'\n  RETURNING\n    t.telegram_user_id, t.name, t.phone, t.team_tag, t.active, t.skip_followup,\n    t.assistant_enabled, 'revocado'::text AS resultado\n),\nblocked AS (\n  SELECT\n    p.telegram_user_id,\n    COALESCE(p.name_raw, '') AS name,\n    p.phone,\n    p.team_tag,\n    p.active,\n    p.skip_followup,\n    false AS assistant_enabled,\n    COALESCE(g.bloqueo, 'sin_cambios') AS resultado\n  FROM params p\n  CROSS JOIN gate g\n  WHERE NOT EXISTS (SELECT 1 FROM updated)\n    AND NOT EXISTS (SELECT 1 FROM inserted)\n    AND NOT EXISTS (SELECT 1 FROM revoked)\n)\nSELECT telegram_user_id, name, phone, team_tag, active, skip_followup, assistant_enabled, resultado FROM updated\nUNION ALL\nSELECT telegram_user_id, name, phone, team_tag, active, skip_followup, assistant_enabled, resultado FROM inserted\nUNION ALL\nSELECT telegram_user_id, name, phone, team_tag, active, skip_followup, assistant_enabled, resultado FROM revoked\nUNION ALL\nSELECT telegram_user_id, name, phone, team_tag, active, skip_followup, assistant_enabled, resultado FROM blocked;",
-        "options": {
-          "queryReplacement": "={{ [$fromAI('accion', 'autorizar, actualizar o revocar', 'string'), $fromAI('telegram_user_id', 'Id numerico de Telegram. Vacio si aun no lo tienen', 'string'), $fromAI('nombre', 'Nombre. Vacio si no lo dijeron', 'string'), $('Telegram Trigger').first().json.message.from.id, $fromAI('phone', 'Telefono WhatsApp solo digitos. Vacio si no lo dijeron', 'string'), $fromAI('team_tag', 'equipo_ventas, asesora o asistente. Vacio si no lo dijeron', 'string'), $fromAI('active', 'true si entra al seguimiento WhatsApp. Vacio si no lo dijeron', 'string'), $fromAI('skip_followup', 'true solo si piden lista negra. Vacio si no lo dijeron', 'string'), $fromAI('notes', 'Nota opcional. Vacio si no la dijeron', 'string')] }}"
+        "name": "gestionar_acceso_asistente",
+        "description": "Autoriza, completa o revoca una persona sin duplicarla. accion: autorizar, actualizar o revocar. telegram_user_id es el id de la solicitud; no lo pongas en phone. Si omites el nombre, usa el de la solicitud pendiente. Esta herramienta ya avisa por Telegram cuando el resultado es alta o actualizado y aviso es enviado. No digas que faltaba el id si el resultado trae telegram_user_id.",
+        "workflowId": {
+          "__rl": true,
+          "value": "={{ $('Cargar config').first().json.workflow_07_id }}",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "accion": "={{ String($fromAI('accion', 'autorizar, actualizar o revocar', 'string') || '').replaceAll(',', ' ') }}",
+            "telegram_user_id": "={{ String($fromAI('telegram_user_id', 'Id numerico de Telegram de la solicitud. Nunca lo pongas en phone', 'string') || '').replaceAll(',', ' ') }}",
+            "nombre": "={{ String($fromAI('nombre', 'Nombre solo si el desarrollador lo dijo en este mensaje. Vacio si no; la solicitud pendiente ya lo tiene', 'string') || '').replaceAll(',', ' ') }}",
+            "caller_id": "={{ String($('Telegram Trigger').first().json.message.from.id || '').replaceAll(',', ' ') }}",
+            "phone": "={{ String($fromAI('phone', 'Telefono WhatsApp solo digitos. Vacio si no lo dijeron. Nunca el id de Telegram', 'string') || '').replaceAll(',', ' ') }}",
+            "team_tag": "={{ String($fromAI('team_tag', 'equipo_ventas, asesora o asistente. Vacio si no lo dijeron', 'string') || '').replaceAll(',', ' ') }}",
+            "active": "={{ String($fromAI('active', 'true si entra al seguimiento de WhatsApp. Vacio si no lo dijeron', 'string') || '').replaceAll(',', ' ') }}",
+            "skip_followup": "={{ String($fromAI('skip_followup', 'true solo si piden lista negra. Vacio si no', 'string') || '').replaceAll(',', ' ') }}",
+            "notes": "={{ String($fromAI('notes', 'Nota opcional. Vacio si no', 'string') || '').replaceAll(',', ' ') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "accion",
+              "displayName": "accion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "telegram_user_id",
+              "displayName": "telegram_user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "nombre",
+              "displayName": "nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "caller_id",
+              "displayName": "caller_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "team_tag",
+              "displayName": "team_tag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "active",
+              "displayName": "active",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "skip_followup",
+              "displayName": "skip_followup",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
         }
       },
       "id": "92c28284-f87d-4f97-805d-b134c1c33dfd",
       "name": "gestionar_acceso_asistente",
-      "type": "n8n-nodes-base.postgresTool",
-      "typeVersion": 2.6,
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.1,
       "position": [
         82896,
         8048
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "onwRUFKCpGpCNnM9",
-          "name": "PostgresDB Seguimiento"
-        }
-      }
+      ]
     },
     {
       "parameters": {
@@ -1564,6 +1658,31 @@
           "name": "eve_leads_bot"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO assistant_access_requests (\n  telegram_user_id, display_name, username, status, requested_at, updated_at\n)\nVALUES (\n  $1::bigint,\n  COALESCE($2::text, ''),\n  NULLIF($3::text, ''),\n  'pending',\n  now(),\n  now()\n)\nON CONFLICT (telegram_user_id) DO UPDATE SET\n  display_name = CASE\n    WHEN NULLIF(btrim(EXCLUDED.display_name), '') IS NULL THEN assistant_access_requests.display_name\n    ELSE EXCLUDED.display_name\n  END,\n  username = COALESCE(NULLIF(btrim(EXCLUDED.username), ''), assistant_access_requests.username),\n  status = 'pending',\n  requested_at = now(),\n  updated_at = now();",
+        "options": {
+            "queryReplacement": "={{ $('Telegram Trigger').first().json.message.from.id }},={{ [$('Telegram Trigger').first().json.message.from.first_name, $('Telegram Trigger').first().json.message.from.last_name].filter(Boolean).join(' ') }},={{ $('Telegram Trigger').first().json.message.from.username || '' }}"
+        }
+      },
+      "id": "guardar-solicitud-acceso",
+      "name": "Guardar solicitud",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        78368,
+        7920
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -1973,7 +2092,7 @@
         ],
         [
           {
-            "node": "Aviso sin permiso",
+            "node": "Guardar solicitud",
             "type": "main",
             "index": 0
           }
@@ -2234,6 +2353,17 @@
           {
             "node": "Asistente desarrollo",
             "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar solicitud": {
+      "main": [
+        [
+          {
+            "node": "Aviso sin permiso",
+            "type": "main",
             "index": 0
           }
         ]

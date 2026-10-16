@@ -77,7 +77,7 @@ Siguen siendo **Postgres Tool** v2.6. Si se importan como Postgres normal, el ag
 | `listar_lista_negra` | Teléfonos con `skip_followup=true` (sin seguimiento WhatsApp) |
 | `gestionar_lista_negra` | `agregar` / `quitar` teléfono en lista negra (BD); al agregar anula scores del lead |
 | `listar_usuarios_asistente` | Solo `desarrollo`. Equipo completo y datos faltantes |
-| `gestionar_acceso_asistente` | Solo `desarrollo`. `autorizar` / `actualizar` reutiliza la fila y completa teléfono, rol y `active`. `revocar` apaga el acceso |
+| `gestionar_acceso_asistente` | Solo `desarrollo`. Es el workflow 07. `autorizar` reutiliza la fila, toma el nombre de `assistant_access_requests` si no lo repites y avisa a esa persona. El id de Telegram no se guarda como teléfono |
 | `gestionar_permisos_herramientas` | Solo `desarrollo`. `listar` / `conceder` / `revocar` en `assistant_tool_acl` |
 
 Las herramientas de administración no van conectadas al agente de un comercial o una asesora. El permiso de cada rol está en `assistant_tool_acl`. `assistant_tool_person` es la excepción de una persona: si `allowed` es false, esa persona no usa la herramienta aunque su rol sí. `assistant_may` aplica primero la persona y después el rol. Volver a correr `schema.sql` no devuelve un permiso de rol que ya se revocó y no borra las excepciones.
@@ -86,6 +86,8 @@ Las herramientas de administración no van conectadas al agente de un comercial 
 | `generar_certificado_reserva` | Tool Workflow: dispara el 06. Arma HTML (plan fijo CON DESAYUNO, fecha Caracas) → Gotenberg → PDF al chat |
 
 `enviar_grafica` **no** es postgresTool. El id del workflow 05 está en `app_config.workflow_05_id`. QuickChart: `Config.quickchartUrl` en el 05 (`http://quickchart:80/chart` o `https://demo-quickchart.hiti0l.easypanel.host/chart`).
+
+Quien escribe sin permiso queda en `assistant_access_requests` (nombre de Telegram y usuario). Al autorizar, si no pasas el nombre, se usa ese. El workflow 07 (`app_config.workflow_07_id`) hace el alta y el Telegram de aviso. Importa el 07, copia su id a esa clave y reimporta el 01.
 
 `generar_certificado_reserva` tampoco es postgresTool. El id del workflow 06 está en `app_config.workflow_06_id`. Entradas: `nombre`, `cedula`, `pax`, `check_in`, `check_out`, `habitacion`, `monto_total_eur`, `pagos` (JSON array), `estado_pago`. Webhook de prueba: `POST /webhook/seguimientos-certificado`. Motor local: `plantilla-certificado/render-certificado.mjs`.
 
