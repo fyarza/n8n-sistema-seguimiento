@@ -3,17 +3,17 @@
     {
       "parameters": {
         "content": "## Setup v2\n1. Corre `n8n/schema.sql` en Postgres (incluye leads WhatsApp).\n2. Mapea credenciales: Telegram, Postgres, DeepSeek.\n3. Speaches, workflow 05 y workflow 06 salen de `app_config` (nodos Consultar app_config → Cargar config). No pegues tokens en el JSON.\n4. Acceso: `team_phones.assistant_enabled` + `telegram_user_id`. Quien no esté recibe aviso y se notifica al rol `desarrollo`. Las herramientas de administracion solo llegan al agente de desarrollo. El resto pasa por `assistant_tool_acl`.\n5. n8n debe tener HTTPS público (webhook de Telegram y de Evolution).\n6. Activa este workflow y prueba texto + nota de voz. Cron avisos = 02. WhatsApp leads = 03+04. Graficas = 05. Certificado PDF = 06.\n\nLas tools del agente son **Postgres Tool** (`postgresTool` v2.6), no el nodo Postgres del flujo.\nModelo: `deepseek-flash` (Chat: maxTokens 4904 / temp 0.2).\nSi falla con `reasoning_content` al usar tools, apaga thinking o usa OpenAI Chat Model con base URL `https://api.deepseek.com` y la misma key.",
-        "height": 532,
+        "height": 612,
         "width": 460,
         "color": 7
       },
-      "id": "1fc05bd1-4f78-4fbc-9de8-234033dc80d2",
+      "id": "ade3f9dc-47d8-415a-9cee-15b90c153ae3",
       "name": "Nota setup",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        63488,
-        8544
+        77200,
+        7088
       ]
     },
     {
@@ -23,13 +23,13 @@
         "width": 420,
         "color": 5
       },
-      "id": "6aa2bd58-0449-42a6-ba14-063635544c31",
+      "id": "6e210ceb-1a60-4167-b5cf-f7d06d6028be",
       "name": "Nota memoria",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        65200,
-        8832
+        79184,
+        7216
       ]
     },
     {
@@ -39,13 +39,13 @@
         ],
         "additionalFields": {}
       },
-      "id": "8cbbafd4-c944-41ad-9724-ca998d4ed5d7",
+      "id": "ec526985-cc95-411a-b80b-0e0126460eab",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.2,
       "position": [
-        63536,
-        9216
+        77184,
+        7744
       ],
       "webhookId": "050cf2c7-4148-447c-8a94-7690993a6b45",
       "credentials": {
@@ -80,13 +80,13 @@
         },
         "options": {}
       },
-      "id": "29b63f48-cc3c-4813-90a6-60b1525ea17a",
+      "id": "45ad50cc-9fbf-4cce-ba8e-d319ee8daaca",
       "name": "Hay mensaje?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        63760,
-        9216
+        77392,
+        7744
       ]
     },
     {
@@ -133,13 +133,13 @@
         },
         "options": {}
       },
-      "id": "59c89bf4-c5f9-4f13-9a2f-4c95e64f2fbb",
+      "id": "0b7d2265-d0c0-4919-b64c-36c2671b8a8d",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        65120,
-        9264
+        79872,
+        7760
       ]
     },
     {
@@ -150,13 +150,13 @@
           "queryReplacement": "={{ $('Telegram Trigger').first().json.message.chat.id }}"
         }
       },
-      "id": "1d2426c7-a918-4e12-840a-ce265bee168b",
+      "id": "386a5571-fd46-419c-963e-8a6f8abe2726",
       "name": "Cargar resumen",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        65328,
-        9264
+        80096,
+        7760
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -168,15 +168,15 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst todayIso = now.toISODate();\nconst year = now.year;\nconst access = $('Consultar acceso').first().json || {};\nconst callerTag = String(access.caller_tag || '');\nconst callerName = String(access.caller_name || '');\nconst systemMessage = [\n  'Eres un asistente de seguimientos en Telegram. Respondes en español, breve y claro.',\n  callerName ? `Quien escribe: ${callerName}. Rol: ${callerTag || 'sin rol'}.` : 'Quien escribe no tiene rol en team_phones.',\n  'Zona horaria fija: America/Caracas.',\n  'Cuando la ficha trae un evento certificado, el detalle YA es un resumen de la primera hoja (huésped, cédula, check-in/out, habitación, plan, PAX, monto, forma de pago). Úsalo tal cual; no pidas el PDF.',\n  ...(callerTag === 'desarrollo' ? ['Eres desarrollo. Solo tu puedes autorizar personas, completar fichas y cambiar permisos. gestionar_acceso_asistente no duplica filas y completa phone, team_tag, active y skip_followup solo con lo que te digan. listar_usuarios_asistente muestra fichas. gestionar_permisos_herramientas lista, concede o revoca. Si el desarrollador nombra a una persona, el cambio es solo de esa persona (persona), no del rol. accion solo deja a esa persona exactamente con las tool_name separadas por coma y bloquea el resto, aunque su rol las tenga. Sin persona, team_tag cambia a todo equipo_ventas, asesora o asistente. listar_lista_negra y gestionar_lista_negra administran la lista negra. No le digas a otra persona que estas herramientas existen.'] : []),\n  'Origen de cierres WhatsApp: nuevo, recurrente real, o traspaso (team_phones con skip_followup=false). La lista negra no entra en estadisticas ni graficas. Los traspasos son venta del equipo: reportalos aparte y no los mezcles en el % de conversion.',\n  'Hay DOS productos. No los mezcles:',\n  '1) Seguimiento comercial: si NO menciona llegada, check-in ni \"cuando llegue\", usa crear_seguimiento. Son DOS avisos a las 10:00: t3 (3 días antes) y day (el mismo día).',\n  '2) Seguimiento de llegada: si menciona llegada, check-in o \"cuando llegue\", usa crear_seguimiento_llegada. Son DOS avisos el MISMO día indicado: 16:00 y 20:00. NO crees t3 ni day. NO uses crear_seguimiento.',\n  'Tú NO calculas esas horas: pasa nombre, teléfono y fecha YYYY-MM-DD a la tool correcta.',\n  `Hoy en Venezuela: ${todayIso} (${now.toFormat('cccc d LLLL yyyy, HH:mm')}). Año vigente: ${year}. Mes de reportes por defecto: ${now.toFormat('yyyy-MM')}.`,\n  'Reglas de fecha (obligatorias):',\n  `- Si el cliente manda un rango (ej. \"28/08 al 30/08\", \"del 28 al 30\", \"28-30/08\", \"28/08 - 30/08\"), usa SOLO la PRIMERA fecha como estimated_date. Ignora la fecha final del rango.`,\n  `- Si el cliente manda día y mes sin año (28/08, 28-08, 28 de agosto), completa el año con el año vigente de Venezuela (${year}). No preguntes el año.`,\n  '- estimated_date para la herramienta SIEMPRE en formato YYYY-MM-DD, con ese año vigente.',\n  `- Ejemplo: hoy es ${todayIso} y el mensaje dice \"Fecha de reserva: 28/08 al 30/08\" → estimated_date = ${year}-08-28.`,\n  'Si falta nombre, teléfono o cualquier fecha, pregunta. Si dice \"el viernes\" u otra fecha relativa, confirma el YYYY-MM-DD usando la fecha de hoy en Venezuela.',\n  'Antes de crear, resume los datos (incluyendo la fecha YYYY-MM-DD que vas a usar) y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes. El campo tipo distingue comercial (T-3 / día 10:00) de llegada (16:00 / 20:00).',\n  'Para cancelar llama cancelar_seguimiento con nombre o teléfono Y tipo: llegada, comercial o todos.',\n  '- Si pide cancelar la llegada o check-in, tipo=llegada (no borres t3/day).',\n  '- Si pide cancelar el seguimiento comercial / el de las 10:00, tipo=comercial (no borres arrival_16/arrival_20).',\n  '- tipo=todos SOLO si pide borrar todas las alertas de ese cliente.',\n  'Si pide grafica, chart, barras, torta, pie, lineas o rendimiento visual, usa enviar_grafica. No inventes numeros ni pegues URLs de imagen en el texto.',\n  'Si pide generar/crear/emitir un certificado o confirmacion de reserva en PDF, usa generar_certificado_reserva. Plan fijo CON DESAYUNO; fecha de emision automatica (Caracas). Antes confirma nombre, cedula, pax, check_in/out, habitacion, monto y pagos. pagos va como JSON. La tool manda el PDF a Telegram; confirma en texto corto. Antes de llamarla pregunta que asesora firma. Si caller_tag es equipo_ventas o asesora, sugiere caller_name y espera confirmacion. Si no eres de ventas, pregunta quien firma y no uses un nombre por defecto. Pasa solo ese nombre; el telefono sale de team_phones.',\n  'enviar_grafica: tipo embudo_mes (etapas), reservas_dia (eje X = dias, series nuevos y recurrentes) o reservas_origen (nuevos vs recurrentes del mes). estilo barras, pie o lineas; si no dicen, barras. pie no aplica por dia; lineas solo por dia. periodo YYYY-MM; si no dicen mes, mes Venezuela.',\n  'La tool manda la foto a Telegram. Tu solo confirmas en texto corto que ya salio la grafica.',\n  'También consultas el embudo de WhatsApp. Un mismo teléfono puede reservar en varios meses: concretaron/reservaron = cierre EN ESE MES (certificado o primer concreto), NO el primer mensaje. Si origen=recurrente, empezó antes y volvió a cerrar: SÍ entra en el mes. Si piden revisar un cliente (nombre o teléfono) usa consultar_ficha_lead y resume first_touch, primer concreto y cada certificado. Para listados por NOMBRE usa listar_leads_reporte (tipo: concretaron, no_concretaron o atendidos). Siempre pasa periodo del mes actual Venezuela (YYYY-MM) salvo que pidan otro mes. estadisticas_leads_mes: reservaron incluye recurrentes; reservaron_recurrentes los separa; pct_reservaciones es solo conversaciones NUEVAS de ese mes que cerraron. Si piden clientes potenciales o difusión, usa listar_leads_potenciales y muestra SIEMPRE nombre, teléfono, etapa y scores (potencial, engagement, cierre, silencio). listar_preguntan_sin_reservar es los que preguntan mucho.',\n  'No inventes teléfonos, scores ni porcentajes: si la tool no trae filas, dilo. No ofrezcas enviar la difusión tú; solo lista y resume.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nlet voiceText = '';\ntry {\n  voiceText = String(($('Texto voz').first().json || {}).text || '').replace(/\\s+/g, ' ').trim();\n} catch (e) {\n  voiceText = '';\n}\nconst chatInput = voiceText\n  ? `[Audio] ${voiceText}`\n  : String(msg.text || '').trim();\nif (!chatInput) {\n  return [];\n}\nreturn [{\n  json: {\n    chatInput,\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n    todayIso,\n    year,\n  },\n}];\n"
+        "jsCode": "const cfg = $('Config').first().json;\nconst msg = $('Telegram Trigger').first().json.message;\nconst chatId = msg.chat.id;\nconst loaded = $input.first().json || {};\nconst summary = String(loaded.summary || '').trim();\nconst now = DateTime.now().setZone(String(cfg.timezone || 'America/Caracas'));\nconst todayIso = now.toISODate();\nconst year = now.year;\nconst access = $('Consultar acceso').first().json || {};\nconst callerTag = String(access.caller_tag || '');\nconst callerName = String(access.caller_name || '');\nconst systemMessage = [\n  'Eres un asistente de seguimientos en Telegram. Respondes en español, breve y claro.',\n  callerName ? `Quien escribe: ${callerName}. Rol: ${callerTag || 'sin rol'}.` : 'Quien escribe no tiene rol en team_phones.',\n  'Zona horaria fija: America/Caracas.',\n  'Cuando la ficha trae un evento certificado, el detalle YA es un resumen de la primera hoja (huésped, cédula, check-in/out, habitación, plan, PAX, monto, forma de pago). Úsalo tal cual; no pidas el PDF.',\n  ...(callerTag === 'desarrollo' ? ['Eres desarrollo. Solo tu puedes autorizar personas, completar fichas y cambiar permisos. gestionar_acceso_asistente no duplica filas y completa phone, team_tag, active y skip_followup solo con lo que te digan. listar_usuarios_asistente muestra fichas. gestionar_permisos_herramientas lista, concede o revoca. Si el desarrollador nombra a una persona, el cambio es solo de esa persona (persona), no del rol. accion solo deja a esa persona exactamente con las tool_name separadas por coma y bloquea el resto, aunque su rol las tenga. Sin persona, team_tag cambia a todo equipo_ventas, asesora o asistente. listar_lista_negra y gestionar_lista_negra administran la lista negra. No le digas a otra persona que estas herramientas existen. Si gestionar_acceso_asistente devuelve alta o actualizado, el flujo ya le escribe a esa persona para que vuelva a enviar su solicitud. Confirmale al desarrollador que el aviso salio.'] : []),\n  'Origen de cierres WhatsApp: nuevo, recurrente real, o traspaso (team_phones con skip_followup=false). La lista negra no entra en estadisticas ni graficas. Los traspasos son venta del equipo: reportalos aparte y no los mezcles en el % de conversion.',\n  'Hay DOS productos. No los mezcles:',\n  '1) Seguimiento comercial: si NO menciona llegada, check-in ni \"cuando llegue\", usa crear_seguimiento. Son DOS avisos a las 10:00: t3 (3 días antes) y day (el mismo día).',\n  '2) Seguimiento de llegada: si menciona llegada, check-in o \"cuando llegue\", usa crear_seguimiento_llegada. Son DOS avisos el MISMO día indicado: 16:00 y 20:00. NO crees t3 ni day. NO uses crear_seguimiento.',\n  'Tú NO calculas esas horas: pasa nombre, teléfono y fecha YYYY-MM-DD a la tool correcta.',\n  `Hoy en Venezuela: ${todayIso} (${now.toFormat('cccc d LLLL yyyy, HH:mm')}). Año vigente: ${year}. Mes de reportes por defecto: ${now.toFormat('yyyy-MM')}.`,\n  'Reglas de fecha (obligatorias):',\n  `- Si el cliente manda un rango (ej. \"28/08 al 30/08\", \"del 28 al 30\", \"28-30/08\", \"28/08 - 30/08\"), usa SOLO la PRIMERA fecha como estimated_date. Ignora la fecha final del rango.`,\n  `- Si el cliente manda día y mes sin año (28/08, 28-08, 28 de agosto), completa el año con el año vigente de Venezuela (${year}). No preguntes el año.`,\n  '- estimated_date para la herramienta SIEMPRE en formato YYYY-MM-DD, con ese año vigente.',\n  `- Ejemplo: hoy es ${todayIso} y el mensaje dice \"Fecha de reserva: 28/08 al 30/08\" → estimated_date = ${year}-08-28.`,\n  'Si falta nombre, teléfono o cualquier fecha, pregunta. Si dice \"el viernes\" u otra fecha relativa, confirma el YYYY-MM-DD usando la fecha de hoy en Venezuela.',\n  'Antes de crear, resume los datos (incluyendo la fecha YYYY-MM-DD que vas a usar) y pide confirmación explícita (sí/no).',\n  'Si la herramienta devuelve status skipped, explica que ese aviso ya quedó en el pasado y no se enviará por Telegram.',\n  'Usa listar_seguimientos para ver pendientes. El campo tipo distingue comercial (T-3 / día 10:00) de llegada (16:00 / 20:00).',\n  'Para cancelar llama cancelar_seguimiento con nombre o teléfono Y tipo: llegada, comercial o todos.',\n  '- Si pide cancelar la llegada o check-in, tipo=llegada (no borres t3/day).',\n  '- Si pide cancelar el seguimiento comercial / el de las 10:00, tipo=comercial (no borres arrival_16/arrival_20).',\n  '- tipo=todos SOLO si pide borrar todas las alertas de ese cliente.',\n  'Si pide grafica, chart, barras, torta, pie, lineas o rendimiento visual, usa enviar_grafica. No inventes numeros ni pegues URLs de imagen en el texto.',\n  'Si pide generar/crear/emitir un certificado o confirmacion de reserva en PDF, usa generar_certificado_reserva. Plan fijo CON DESAYUNO; fecha de emision automatica (Caracas). Antes confirma nombre, cedula, pax, check_in/out, habitacion, monto y pagos. pagos va como JSON. La tool manda el PDF a Telegram; confirma en texto corto. Antes de llamarla pregunta que asesora firma. Si caller_tag es equipo_ventas o asesora, sugiere caller_name y espera confirmacion. Si no eres de ventas, pregunta quien firma y no uses un nombre por defecto. Pasa solo ese nombre; el telefono sale de team_phones.',\n  'enviar_grafica: tipo embudo_mes (etapas), reservas_dia (eje X = dias, series nuevos y recurrentes) o reservas_origen (nuevos vs recurrentes del mes). estilo barras, pie o lineas; si no dicen, barras. pie no aplica por dia; lineas solo por dia. periodo YYYY-MM; si no dicen mes, mes Venezuela.',\n  'La tool manda la foto a Telegram. Tu solo confirmas en texto corto que ya salio la grafica.',\n  'También consultas el embudo de WhatsApp. Un mismo teléfono puede reservar en varios meses: concretaron/reservaron = cierre EN ESE MES (certificado o primer concreto), NO el primer mensaje. Si origen=recurrente, empezó antes y volvió a cerrar: SÍ entra en el mes. Si piden revisar un cliente (nombre o teléfono) usa consultar_ficha_lead y resume first_touch, primer concreto y cada certificado. Para listados por NOMBRE usa listar_leads_reporte (tipo: concretaron, no_concretaron o atendidos). Siempre pasa periodo del mes actual Venezuela (YYYY-MM) salvo que pidan otro mes. estadisticas_leads_mes: reservaron incluye recurrentes; reservaron_recurrentes los separa; pct_reservaciones es solo conversaciones NUEVAS de ese mes que cerraron. Si piden clientes potenciales o difusión, usa listar_leads_potenciales y muestra SIEMPRE nombre, teléfono, etapa y scores (potencial, engagement, cierre, silencio). listar_preguntan_sin_reservar es los que preguntan mucho.',\n  'No inventes teléfonos, scores ni porcentajes: si la tool no trae filas, dilo. No ofrezcas enviar la difusión tú; solo lista y resume.',\n  'No inventes clientes ni fechas. No hables de otros temas.',\n  'Resumen durable de conversaciones anteriores (fuera de las últimas 10 interacciones):',\n  summary || 'Ninguno aún.',\n].join('\\n');\nlet voiceText = '';\ntry {\n  voiceText = String(($('Texto voz').first().json || {}).text || '').replace(/\\s+/g, ' ').trim();\n} catch (e) {\n  voiceText = '';\n}\nconst chatInput = voiceText\n  ? `[Audio] ${voiceText}`\n  : String(msg.text || '').trim();\nif (!chatInput) {\n  return [];\n}\nreturn [{\n  json: {\n    chatInput,\n    sessionId: String(chatId),\n    chatId,\n    systemMessage,\n    summary,\n    todayIso,\n    year,\n  },\n}];\n"
       },
-      "id": "3af48e6f-c03f-4481-bc75-fbf9af494d22",
+      "id": "075d9b2a-c06d-4799-916e-977bc97a8ba0",
       "name": "Preparar input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        65536,
-        9248
+        80320,
+        7760
       ]
     },
     {
@@ -188,13 +188,13 @@
           "maxIterations": 10
         }
       },
-      "id": "d6c47398-2471-47f7-95f7-ef2f1340784e",
+      "id": "ed62be22-d89b-4cfd-83a9-d84780231c90",
       "name": "Asistente seguimientos",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 2.2,
       "position": [
-        66416,
-        9168
+        81904,
+        8384
       ]
     },
     {
@@ -205,13 +205,13 @@
           "temperature": 0.2
         }
       },
-      "id": "54a0d0f3-16d3-4a37-ad3e-88063164182a",
+      "id": "467635d1-4d26-493f-92c6-201998357ebd",
       "name": "DeepSeek Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
       "typeVersion": 1,
       "position": [
-        65792,
-        9408
+        80944,
+        7968
       ],
       "credentials": {
         "deepSeekApi": {
@@ -227,13 +227,13 @@
         "tableName": "assistant_chat_messages",
         "contextWindowLength": 10
       },
-      "id": "4b9bc9d8-063f-4038-aa5b-93907a357b08",
+      "id": "2f4903fe-8fb5-42b5-b771-417dfba7c82d",
       "name": "Postgres Chat Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
       "typeVersion": 1.3,
       "position": [
-        65920,
-        9408
+        81088,
+        7840
       ],
       "credentials": {
         "postgres": {
@@ -252,13 +252,13 @@
           "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.chat.id, $fromAI('client_name', 'Nombre del cliente a seguir', 'string'), $fromAI('client_phone', 'Telefono del cliente', 'string'), $fromAI('estimated_date', 'Fecha de referencia YYYY-MM-DD: primera fecha si hay rango, anio vigente Venezuela si solo dia/mes', 'string')] }}"
         }
       },
-      "id": "1fd446b3-0195-4f53-9517-afa1ca79318d",
+      "id": "69163b10-4eba-498f-b340-57e1244c7b19",
       "name": "crear_seguimiento",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        66048,
-        9408
+        81264,
+        7968
       ],
       "credentials": {
         "postgres": {
@@ -277,13 +277,13 @@
           "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.chat.id, $fromAI('client_name', 'Nombre del huesped o cliente de la llegada', 'string'), $fromAI('client_phone', 'Telefono del cliente', 'string'), $fromAI('estimated_date', 'Fecha de llegada YYYY-MM-DD: primera fecha si hay rango, anio vigente Venezuela si solo dia/mes', 'string')] }}"
         }
       },
-      "id": "12de7f3a-6aae-404b-bc41-2b612132baf8",
+      "id": "632552b8-11aa-44bf-9fde-6b2f5d33f68a",
       "name": "crear_seguimiento_llegada",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        66944,
-        9408
+        81392,
+        7808
       ],
       "credentials": {
         "postgres": {
@@ -302,13 +302,13 @@
           "queryReplacement": "={{ $('Telegram Trigger').first().json.message.chat.id }}"
         }
       },
-      "id": "9c8c1b60-7f25-451d-aefc-54fbc8899d0f",
+      "id": "e407324d-e6e0-4f59-8ac3-dd4d48e0e56f",
       "name": "listar_seguimientos",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        66176,
-        9408
+        81568,
+        7968
       ],
       "credentials": {
         "postgres": {
@@ -327,13 +327,13 @@
           "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.chat.id, $fromAI('cliente', 'Nombre o telefono del cliente cuyo seguimiento se cancela', 'string'), $fromAI('tipo', 'llegada, comercial o todos. llegada si menciono llegada/check-in; comercial si es T-3 o el de las 10:00; todos solo si pidio borrar todas las alertas de ese cliente', 'string')] }}"
         }
       },
-      "id": "7a3778d1-55b2-4502-b77b-8940ec6c3822",
+      "id": "99c6684d-1293-47ed-be98-52c1b947c079",
       "name": "cancelar_seguimiento",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        66304,
-        9408
+        81648,
+        7808
       ],
       "credentials": {
         "postgres": {
@@ -352,13 +352,13 @@
           "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "fb3861a7-3740-46e6-9a04-55407ab279d1",
+      "id": "530be44b-3227-4290-9632-1d79da346f37",
       "name": "listar_leads_potenciales",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        66432,
-        9408
+        81824,
+        7968
       ],
       "credentials": {
         "postgres": {
@@ -377,13 +377,13 @@
           "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "12f74451-cc81-4d14-aa98-184cd77488a6",
+      "id": "17211cc5-92d8-4309-909a-a396ab996402",
       "name": "listar_preguntan_sin_reservar",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        66560,
-        9408
+        81920,
+        7808
       ],
       "credentials": {
         "postgres": {
@@ -402,13 +402,13 @@
           "queryReplacement": "={{ [$fromAI('periodo', 'Mes a consultar en YYYY-MM. Si el usuario no indica mes, usa el mes actual de Venezuela', 'string'), $('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "086a1e9d-3682-4d78-ac93-4ce9b8668782",
+      "id": "df6b5c18-238e-4457-8314-16b6c5ea7a42",
       "name": "estadisticas_leads_mes",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        66688,
-        9408
+        82048,
+        7968
       ],
       "credentials": {
         "postgres": {
@@ -427,13 +427,13 @@
           "queryReplacement": "={{ [$fromAI('tipo', 'concretaron, no_concretaron, traspasos, lista_negra o atendidos', 'string'), $fromAI('periodo', 'Mes YYYY-MM. Si el usuario no indica mes, usa el mes actual de Venezuela', 'string'), $('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "e056323f-4b59-4958-b778-a60b315b3d9e",
+      "id": "0fabc642-3648-4410-b3e0-1738508fac42",
       "name": "listar_leads_reporte",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        66816,
-        9408
+        82160,
+        7808
       ],
       "credentials": {
         "postgres": {
@@ -502,13 +502,13 @@
           "convertFieldsToString": false
         }
       },
-      "id": "e83866f3-84d5-4a8c-808b-c818e2c2c233",
+      "id": "88262153-f0bc-40b5-adeb-a94f74083910",
       "name": "enviar_grafica",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.1,
       "position": [
-        67088,
-        9408
+        82304,
+        8064
       ]
     },
     {
@@ -641,13 +641,13 @@
           "convertFieldsToString": false
         }
       },
-      "id": "tool-certificado",
+      "id": "dc8214bc-a4f9-4baa-afb7-c13a75706481",
       "name": "generar_certificado_reserva",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.1,
       "position": [
-        67248,
-        9408
+        82544,
+        8048
       ]
     },
     {
@@ -660,13 +660,13 @@
           "queryReplacement": "={{ [$fromAI('cliente', 'Telefono o nombre del cliente a revisar', 'string'), $('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "fa1b29c3-4b92-4559-9995-4f4a5937af05",
+      "id": "24b2d184-c773-4a85-9454-9e68ef2a235d",
       "name": "consultar_ficha_lead",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        67200,
-        9408
+        82384,
+        7840
       ],
       "credentials": {
         "postgres": {
@@ -683,13 +683,13 @@
           "queryReplacement": "={{ String($('Telegram Trigger').first().json.message.chat.id) }}"
         }
       },
-      "id": "0937448e-503e-41e9-919c-59c0ca2be4ad",
+      "id": "f5534e4b-3915-4499-a4d2-1f41faaa41ba",
       "name": "Contar memoria",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        68064,
-        9008
+        83824,
+        7648
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -724,13 +724,13 @@
         },
         "options": {}
       },
-      "id": "e3e5ecc8-f8af-4014-a22f-e71fd47f0911",
+      "id": "f1d7ad22-49fa-4a80-8075-54707ad2e020",
       "name": "Hay que compactar?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        68272,
-        9008
+        84048,
+        7648
       ]
     },
     {
@@ -741,13 +741,13 @@
           "queryReplacement": "={{ String($('Telegram Trigger').first().json.message.chat.id) }}"
         }
       },
-      "id": "8ca5ce67-c7b0-4e0b-9e21-8613aa214cc6",
+      "id": "a2c89af8-5a5f-4198-8d9d-29a36e5b85c5",
       "name": "Extraer viejos",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        68496,
-        9008
+        84272,
+        7648
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -761,13 +761,13 @@
       "parameters": {
         "jsCode": "const items = $input.all();\nconst prev = String(($('Cargar resumen').first().json || {}).summary || '').trim();\nfunction extract(msg) {\n  if (!msg) return '';\n  if (typeof msg === 'string') return msg;\n  const data = msg.data || msg;\n  const content = data.content || msg.content || '';\n  if (typeof content === 'string') return content;\n  if (Array.isArray(content)) {\n    return content.map((c) => (typeof c === 'string' ? c : (c && c.text) || '')).join(' ');\n  }\n  try { return JSON.stringify(content); } catch (e) { return ''; }\n}\nconst lines = items.map((item) => {\n  const raw = item.json.message || item.json;\n  if (!raw || raw.n === 0) return '';\n  const type = raw.type || (raw.data && raw.data.type) || 'msg';\n  const body = extract(raw);\n  if (!body) return '';\n  return `${type}: ${body}`;\n}).filter(Boolean);\nif (!lines.length) {\n  return [];\n}\nconst text = [\n  prev ? `Resumen previo:\\n${prev}` : '',\n  'Mensajes que salen de la ventana:',\n  lines.join('\\n'),\n].filter(Boolean).join('\\n\\n');\nreturn [{\n  json: {\n    text,\n    compactedCount: lines.length,\n    chatId: $('Telegram Trigger').first().json.message.chat.id,\n  },\n}];"
       },
-      "id": "e4dc3aac-0ffe-433f-bc14-7d754f8b2b9b",
+      "id": "c20fe1f3-0701-4e0e-a0cb-b8bb7e03bc99",
       "name": "Armar texto viejo",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        68720,
-        9008
+        84496,
+        7648
       ]
     },
     {
@@ -776,13 +776,13 @@
         "text": "=Resume en español, máximo 800 caracteres, solo hechos durables: clientes, teléfonos, fechas estimadas, seguimientos creados o cancelados. Descarta saludos y repeticiones.\n\n{{ $json.text }}",
         "batching": {}
       },
-      "id": "9fc70a17-f08c-4747-8635-5405a87a5876",
+      "id": "32d397fd-b28b-48c3-8195-0329e863b60c",
       "name": "Compactar historial",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.7,
       "position": [
-        68944,
-        9008
+        84720,
+        7648
       ]
     },
     {
@@ -792,13 +792,13 @@
           "temperature": 0.1
         }
       },
-      "id": "20b51843-b8c8-42c2-9f7d-91705f429986",
+      "id": "c2bff2c3-f7ec-403a-9005-c85133b67fdd",
       "name": "DeepSeek Compactar",
       "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
       "typeVersion": 1,
       "position": [
-        69024,
-        9248
+        84800,
+        7872
       ],
       "credentials": {
         "deepSeekApi": {
@@ -811,13 +811,13 @@
       "parameters": {
         "jsCode": "const compact = $input.first().json || {};\nconst summary = String(compact.text || compact.output || compact.response || compact.message || '').trim();\nif (!summary) {\n  return [];\n}\nreturn [{\n  json: {\n    summary,\n    chatId: $('Telegram Trigger').first().json.message.chat.id,\n    compactedCount: Number(($('Armar texto viejo').first().json || {}).compactedCount || 0),\n  },\n}];"
       },
-      "id": "1078f6e4-e23b-4061-a135-c100fd87a885",
+      "id": "b4d1a7c7-ebe8-47ac-a6a2-8e61ef69e3b6",
       "name": "Normalizar resumen",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        69296,
-        9008
+        85072,
+        7648
       ]
     },
     {
@@ -828,13 +828,13 @@
           "queryReplacement": "={{ [$json.chatId, $json.summary, $json.compactedCount] }}"
         }
       },
-      "id": "926dc446-92ca-4109-a940-1cf9f4418538",
+      "id": "49d545d7-c129-4e72-98bd-0a8daf64ff13",
       "name": "Guardar resumen",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        69520,
-        9008
+        85296,
+        7648
       ],
       "credentials": {
         "postgres": {
@@ -851,13 +851,13 @@
           "queryReplacement": "={{ String($('Telegram Trigger').first().json.message.chat.id) }}"
         }
       },
-      "id": "3ab67f6a-5ef6-4ad6-95ba-2377e0a4244c",
+      "id": "7783e27d-37c3-4cae-9623-82a8781be5e1",
       "name": "Borrar viejos",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        69744,
-        9008
+        85520,
+        7648
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -873,13 +873,13 @@
         "query": "SELECT config_key, config_value FROM app_config;",
         "options": {}
       },
-      "id": "cfg-query-01",
+      "id": "f6228f01-dbc7-45a5-add0-bdea971a85c4",
       "name": "Consultar app_config",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        63790,
-        8900
+        77632,
+        7744
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -891,16 +891,15 @@
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
         "jsCode": "const cfg = {};\nfor (const item of $input.all()) {\n  const row = item.json || {};\n  if (row.config_key) cfg[row.config_key] = String(row.config_value ?? '');\n}\nreturn [{ json: cfg }];\n"
       },
-      "id": "cfg-shape-01",
+      "id": "e44fd432-b721-4e5e-9140-1d1f9bd532a1",
       "name": "Cargar config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        64010,
-        8900
+        77856,
+        7744
       ]
     },
     {
@@ -911,13 +910,13 @@
           "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "qry-acceso",
+      "id": "9ecc734d-55a5-4d65-b778-1b14a7e51b31",
       "name": "Consultar acceso",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        63880,
-        9000
+        78080,
+        7744
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -952,31 +951,31 @@
         },
         "options": {}
       },
-      "id": "if-acceso",
+      "id": "f165a5df-0022-48ca-aa24-23e11224272c",
       "name": "Es autorizado?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        64120,
-        9000
+        78304,
+        7744
       ]
     },
     {
       "parameters": {
         "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
-        "text": "No tienes permiso para usar este asistente. Si te corresponde el acceso, la persona que lo administra ya fue avisada.",
+        "text": "Hola, un gusto en saludarte. Actualmente, no estas autorizado para usar este asistente. Si te corresponde tener acceso, el Administrador, ya esta siendo notificado para autorizar el acceso. Recibirás una notificación, cuando este listo.",
         "additionalFields": {
           "appendAttribution": false,
           "disable_web_page_preview": true
         }
       },
-      "id": "tg-sin-permiso",
+      "id": "5df1cc41-58e4-46f9-830c-5cd9c3fd059f",
       "name": "Aviso sin permiso",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        64360,
-        8680
+        78368,
+        8080
       ],
       "webhookId": "tg-sin-permiso",
       "credentials": {
@@ -993,16 +992,17 @@
         "text": "={{ 'Solicitud de acceso al asistente\\nNombre: ' + (($('Telegram Trigger').first().json.message.from.first_name || '') + ' ' + ($('Telegram Trigger').first().json.message.from.last_name || '')).trim() + '\\nUsuario: @' + ($('Telegram Trigger').first().json.message.from.username || 'sin_usuario') + '\\ntelegram_user_id: ' + $('Telegram Trigger').first().json.message.from.id + '\\nPara darle acceso responde: autoriza ' + $('Telegram Trigger').first().json.message.from.id }}",
         "additionalFields": {
           "appendAttribution": false,
-          "disable_web_page_preview": true
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
         }
       },
-      "id": "tg-aviso-dev",
+      "id": "69758d19-ff48-40fc-8377-b3bdad078a0e",
       "name": "Aviso desarrollador",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        64600,
-        8680
+        78544,
+        8080
       ],
       "webhookId": "tg-aviso-dev",
       "credentials": {
@@ -1038,13 +1038,13 @@
         },
         "options": {}
       },
-      "id": "7673752b-fe93-4752-8ef1-056b73d67fc3",
+      "id": "9a643ca4-2a84-485c-bfa7-3d0f4d80c279",
       "name": "Es voz?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        63984,
-        9328
+        78512,
+        7760
       ]
     },
     {
@@ -1053,13 +1053,13 @@
         "fileId": "={{ $('Telegram Trigger').first().json.message.voice.file_id || $('Telegram Trigger').first().json.message.audio.file_id }}",
         "additionalFields": {}
       },
-      "id": "06670ded-6e43-49e4-aa46-6b9a8719672a",
+      "id": "f007f0d1-62b7-4f8c-b67a-2a9763466ba9",
       "name": "Descargar voz",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        64368,
-        9056
+        78928,
+        7648
       ],
       "alwaysOutputData": true,
       "webhookId": "tg-file-voice",
@@ -1108,13 +1108,13 @@
           "timeout": 300000
         }
       },
-      "id": "1821dc4e-573f-418b-86e2-9b675b4f518e",
+      "id": "221bfe86-f71f-42a6-8a5a-56aaa1981dfc",
       "name": "Transcribir voz",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        64544,
-        9056
+        79152,
+        7648
       ],
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -1127,13 +1127,13 @@
       "parameters": {
         "jsCode": "const item = $input.first() || {};\nconst raw = item.json || {};\nconst dl = $('Descargar voz').first() || {};\nconst bin = (dl.binary && (dl.binary.data || Object.values(dl.binary)[0])) || null;\nconst hasFile = Boolean(bin && (bin.data || bin.id || bin.fileSize));\n\nfunction briefErr(v) {\n  let s = '';\n  if (v == null) return '';\n  if (typeof v === 'object') {\n    s = String(v.message || v.error || v.statusMessage || v.statusCode || '');\n    if (!s) {\n      try { s = JSON.stringify(v); } catch (e) { s = String(v); }\n    }\n  } else {\n    s = String(v);\n  }\n  s = s.replace(/<!DOCTYPE[\\s\\S]*/i, '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n  if (/502|bad gateway/i.test(s) || /ECONNRESET|ETIMEDOUT|timeout/i.test(s)) {\n    return 'servicio STT caído o timeout (audio largo)';\n  }\n  if (/401|403|not authenticated|unauthorized/i.test(s)) {\n    return 'STT sin autorización (revisa Bearer)';\n  }\n  return s.slice(0, 120);\n}\n\nconst errParts = [];\nif (raw.error) errParts.push(briefErr(raw.error));\nif (raw.message && !raw.text) errParts.push(briefErr(raw.message));\nif (raw.errorMessage) errParts.push(briefErr(raw.errorMessage));\nif (raw.statusCode && Number(raw.statusCode) >= 400) errParts.push(briefErr(String(raw.statusCode)));\nif (dl.json && (dl.json.error || dl.json.message) && !hasFile) {\n  errParts.push(briefErr(dl.json.error || dl.json.message));\n}\n\nconst text = String(raw.text || '').replace(/\\s+/g, ' ').trim();\nconst ok = Boolean(hasFile && text);\nlet error = '';\nif (!hasFile) {\n  error = 'No pude descargar el audio de Telegram.';\n} else if (!text) {\n  const hint = errParts.filter(Boolean)[0] || 'Speaches no devolvió texto';\n  error = hint;\n}\n\n// Mensaje amable para Telegram (sin HTML crudo)\nlet aviso = 'No pude escuchar el audio.';\nif (!hasFile) {\n  aviso = 'No pude descargar el audio de Telegram. Intenta de nuevo o escribe el mensaje.';\n} else if (!text) {\n  aviso = 'No pude transcribir el audio (a veces falla con audios largos o si Speaches está saturado). Prueba un audio más corto o escribe el mensaje.';\n}\n\nreturn [{ json: { text, ok, error, aviso } }];\n"
       },
-      "id": "6bee1f4f-12d5-4413-8ea2-9d57cdccbb8f",
+      "id": "dca556a5-6ac7-42a7-bf34-087d64f10a35",
       "name": "Texto voz",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        64704,
-        9056
+        79376,
+        7648
       ]
     },
     {
@@ -1143,13 +1143,13 @@
         "width": 420,
         "color": 4
       },
-      "id": "76dbc607-2db1-44df-b2ee-3fcf273e3edd",
+      "id": "609f6948-5464-48b8-92f5-2ef2981c1d4b",
       "name": "Nota voz Telegram",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        64208,
-        8768
+        78704,
+        7312
       ]
     },
     {
@@ -1177,13 +1177,13 @@
         },
         "options": {}
       },
-      "id": "ab5a8612-4393-4431-88c7-084d7614c470",
+      "id": "4de25459-920c-4481-aed7-d7dd708aa7a7",
       "name": "Hay texto voz?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        64880,
-        9056
+        79616,
+        7648
       ]
     },
     {
@@ -1196,13 +1196,13 @@
           "parse_mode": "HTML"
         }
       },
-      "id": "f1988351-e5bf-4f45-9f96-fcb8f25a10db",
+      "id": "ca11bd16-c52e-4aa2-b58b-f5192713986d",
       "name": "Aviso voz fallida",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        65104,
-        9472
+        79872,
+        7520
       ],
       "webhookId": "tg-voice-fail",
       "credentials": {
@@ -1221,13 +1221,13 @@
         "width": 360,
         "color": 4
       },
-      "id": "fa34ddd8-23ec-414d-b93f-30502c991f89",
+      "id": "fac36c24-e6b9-4cec-8823-0a9ce2ce2e23",
       "name": "Nota dividir mensajes",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        67328,
-        8720
+        83360,
+        7408
       ]
     },
     {
@@ -1240,13 +1240,13 @@
           "parse_mode": "HTML"
         }
       },
-      "id": "cc629449-9125-4b29-89c9-6e6075be02ca",
+      "id": "e8be20cb-53d0-425d-983d-fc5683d9762d",
       "name": "Enviar por Telegram",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        67840,
-        9152
+        84048,
+        7840
       ],
       "webhookId": "2e61b7f5-10ce-4c90-aed4-ba4db2b0c154",
       "credentials": {
@@ -1263,10 +1263,10 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        67408,
-        9056
+        83600,
+        7760
       ],
-      "id": "766e3d61-be15-4053-883b-c41f609a95f1",
+      "id": "6880a4ee-7e89-428d-810a-eec342be56ba",
       "name": "Loop Over Items"
     },
     {
@@ -1276,10 +1276,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        68064,
-        9296
+        84272,
+        7856
       ],
-      "id": "9c033a6d-e4e2-4909-89c6-d56ea9d66423",
+      "id": "e10c1630-a353-4769-b077-5da484d32766",
       "name": "Wait",
       "webhookId": "c3c7e3c0-7707-46af-8740-f5fbdc4ed668"
     },
@@ -1291,10 +1291,10 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        65840,
-        9120
+        80544,
+        7760
       ],
-      "id": "231a7988-ad78-4d73-90d2-95077fa3536c",
+      "id": "952a7c18-8a79-44d1-947a-03166919d188",
       "name": "Telegram: Typing",
       "webhookId": "d35fc0e7-fa1e-4d8d-bc3f-cd5b749cefa3",
       "credentials": {
@@ -1312,10 +1312,10 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        67632,
-        9152
+        83824,
+        7840
       ],
-      "id": "f661b747-b3d1-46af-9cb3-39eedb5a9e90",
+      "id": "cbeb037e-81bc-4672-918d-1906ad8634e0",
       "name": "Telegram: Typing2",
       "webhookId": "07c39f92-1c21-4cd7-aa88-72a5bb562838",
       "credentials": {
@@ -1334,10 +1334,10 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        64192,
-        9056
+        78720,
+        7648
       ],
-      "id": "a8df6811-0870-4c4b-ac31-1fb92f85971d",
+      "id": "d512ce44-edc2-407a-9d6e-6c6d5d109db3",
       "name": "Telegram: record_voice",
       "webhookId": "53d1ed05-7d7d-40b0-8385-baf510a457dc",
       "credentials": {
@@ -1354,10 +1354,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        66864,
-        9152
+        83376,
+        7760
       ],
-      "id": "082438b6-d84e-4f13-9686-71788452ad03",
+      "id": "04af4514-a58b-4745-bd0a-59b7c6aae17f",
       "name": "Dividir Mensaje"
     },
     {
@@ -1370,13 +1370,13 @@
           "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "tool-listar-lista-negra",
+      "id": "150e8417-5de1-479f-9d3d-987d358782a9",
       "name": "listar_lista_negra",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        67328,
-        9408
+        82560,
+        7824
       ],
       "credentials": {
         "postgres": {
@@ -1395,13 +1395,13 @@
           "queryReplacement": "={{ [$fromAI('accion', 'agregar o quitar', 'string'), $fromAI('telefono', 'Telefono en digitos, con codigo pais si se puede', 'string'), $fromAI('nombre', 'Nombre opcional al agregar', 'string'), $fromAI('notes', 'Nota opcional', 'string'), $('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "tool-gestionar-lista-negra",
+      "id": "eade57c8-8a82-4247-b6be-93bfffd33472",
       "name": "gestionar_lista_negra",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        67456,
-        9408
+        82752,
+        7904
       ],
       "credentials": {
         "postgres": {
@@ -1420,13 +1420,13 @@
           "queryReplacement": "={{ [$fromAI('accion', 'autorizar, actualizar o revocar', 'string'), $fromAI('telegram_user_id', 'Id numerico de Telegram. Vacio si aun no lo tienen', 'string'), $fromAI('nombre', 'Nombre. Vacio si no lo dijeron', 'string'), $('Telegram Trigger').first().json.message.from.id, $fromAI('phone', 'Telefono WhatsApp solo digitos. Vacio si no lo dijeron', 'string'), $fromAI('team_tag', 'equipo_ventas, asesora o asistente. Vacio si no lo dijeron', 'string'), $fromAI('active', 'true si entra al seguimiento WhatsApp. Vacio si no lo dijeron', 'string'), $fromAI('skip_followup', 'true solo si piden lista negra. Vacio si no lo dijeron', 'string'), $fromAI('notes', 'Nota opcional. Vacio si no la dijeron', 'string')] }}"
         }
       },
-      "id": "tool-gestionar-acceso",
+      "id": "92c28284-f87d-4f97-805d-b134c1c33dfd",
       "name": "gestionar_acceso_asistente",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        67600,
-        9408
+        82896,
+        8048
       ],
       "credentials": {
         "postgres": {
@@ -1445,13 +1445,13 @@
           "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.from.id] }}"
         }
       },
-      "id": "tool-listar-usuarios",
+      "id": "032800fc-2f6d-4e79-a038-3936ad4bbb3e",
       "name": "listar_usuarios_asistente",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        67728,
-        9408
+        83072,
+        8048
       ],
       "credentials": {
         "postgres": {
@@ -1470,13 +1470,13 @@
           "queryReplacement": "={{ [$fromAI('accion', 'listar, conceder o revocar', 'string'), $fromAI('team_tag', 'desarrollo, equipo_ventas, asesora o asistente. Vacio al listar', 'string'), $fromAI('tool_name', 'Nombre exacto de la herramienta. Vacio al listar', 'string'), $('Telegram Trigger').first().json.message.from.id, $fromAI('persona', 'Nombre de una persona. Vacio si el cambio es de todo el rol', 'string')] }}"
         }
       },
-      "id": "tool-permisos-herramientas",
+      "id": "b5591824-627f-483f-b741-a719f74877bd",
       "name": "gestionar_permisos_herramientas",
       "type": "n8n-nodes-base.postgresTool",
       "typeVersion": 2.6,
       "position": [
-        67920,
-        8600
+        83168,
+        7872
       ],
       "credentials": {
         "postgres": {
@@ -1491,16 +1491,17 @@
         "text": "={{ $('Preparar input').item.json.chatInput }}",
         "options": {
           "systemMessage": "={{ $('Preparar input').item.json.systemMessage }}",
-          "maxIterations": 10
+          "maxIterations": 10,
+          "returnIntermediateSteps": true
         }
       },
-      "id": "agent-desarrollo",
+      "id": "b28847f6-905d-45c2-9ab0-64b9202a0df4",
       "name": "Asistente desarrollo",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 2.2,
       "position": [
-        66416,
-        8600
+        81904,
+        7360
       ]
     },
     {
@@ -1509,7 +1510,7 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "loose",
+            "typeValidation": "strict",
             "version": 2
           },
           "conditions": [
@@ -1528,14 +1529,55 @@
         },
         "options": {}
       },
-      "id": "if-desarrollo",
+      "id": "940811f3-6ebd-4a5f-89df-ca785bb021b9",
       "name": "Es desarrollador?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        66080,
-        9000
+        80768,
+        7760
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const steps = $input.first().json.intermediateSteps || [];\nconst granted = new Set(['actualizado', 'alta']);\nconst seen = new Set();\nconst out = [];\n\nfunction rowsFrom(obs) {\n  let data = obs;\n  if (typeof data === 'string') {\n    try { data = JSON.parse(data); } catch (e) { return []; }\n  }\n  if (!data) return [];\n  const list = Array.isArray(data) ? data : [data];\n  return list.map((row) => (row && row.json) ? row.json : row);\n}\n\nfor (const step of steps) {\n  const tool = String(step?.action?.tool || '');\n  if (tool !== 'gestionar_acceso_asistente') continue;\n  for (const row of rowsFrom(step.observation)) {\n    const id = String(row.telegram_user_id || '').replace(/\\D/g, '');\n    const resultado = String(row.resultado || '');\n    if (!id || !granted.has(resultado) || seen.has(id)) continue;\n    if (row.assistant_enabled === false || row.assistant_enabled === 'f') continue;\n    seen.add(id);\n    const name = String(row.name || '').trim();\n    const who = name ? ', ' + name : '';\n    out.push({ json: { chatId: id, text: 'Ya tienes acceso al asistente' + who + '. Escribe de nuevo lo que necesitas.' } });\n  }\n}\nreturn out;\n"
+      },
+      "id": "prep-aviso-acceso",
+      "name": "Preparar aviso de acceso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        81904,
+        8048
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "tg-acceso-concedido",
+      "name": "Aviso acceso concedido",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        82160,
+        8048
+      ],
+      "webhookId": "tg-acceso-concedido",
+      "credentials": {
+        "telegramApi": {
+          "id": "hrOL07XlEUKRSsxC",
+          "name": "eve_leads_bot"
+        }
+      },
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -1781,6 +1823,22 @@
         ]
       ]
     },
+    "generar_certificado_reserva": {
+      "ai_tool": [
+        [
+          {
+            "node": "Asistente seguimientos",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "Asistente desarrollo",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "consultar_ficha_lead": {
       "ai_tool": [
         [
@@ -1879,6 +1937,68 @@
         [
           {
             "node": "Borrar viejos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar app_config": {
+      "main": [
+        [
+          {
+            "node": "Cargar config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar config": {
+      "main": [
+        [
+          {
+            "node": "Consultar acceso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar acceso": {
+      "main": [
+        [
+          {
+            "node": "Es autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es autorizado?": {
+      "main": [
+        [
+          {
+            "node": "Es voz?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aviso sin permiso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aviso sin permiso": {
+      "main": [
+        [
+          {
+            "node": "Aviso desarrollador",
             "type": "main",
             "index": 0
           }
@@ -2038,22 +2158,6 @@
         ]
       ]
     },
-    "generar_certificado_reserva": {
-      "ai_tool": [
-        [
-          {
-            "node": "Asistente seguimientos",
-            "type": "ai_tool",
-            "index": 0
-          },
-          {
-            "node": "Asistente desarrollo",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "listar_lista_negra": {
       "ai_tool": [
         [
@@ -2071,46 +2175,6 @@
           {
             "node": "Asistente desarrollo",
             "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Consultar acceso": {
-      "main": [
-        [
-          {
-            "node": "Es autorizado?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Es autorizado?": {
-      "main": [
-        [
-          {
-            "node": "Es voz?",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Aviso sin permiso",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Aviso sin permiso": {
-      "main": [
-        [
-          {
-            "node": "Aviso desarrollador",
-            "type": "main",
             "index": 0
           }
         ]
@@ -2138,22 +2202,27 @@
         ]
       ]
     },
-    "Consultar app_config": {
-      "main": [
+    "gestionar_permisos_herramientas": {
+      "ai_tool": [
         [
           {
-            "node": "Cargar config",
-            "type": "main",
+            "node": "Asistente desarrollo",
+            "type": "ai_tool",
             "index": 0
           }
         ]
       ]
     },
-    "Cargar config": {
+    "Asistente desarrollo": {
       "main": [
         [
           {
-            "node": "Consultar acceso",
+            "node": "Dividir Mensaje",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar aviso de acceso",
             "type": "main",
             "index": 0
           }
@@ -2178,29 +2247,19 @@
         ]
       ]
     },
-    "Asistente desarrollo": {
+    "Preparar aviso de acceso": {
       "main": [
         [
           {
-            "node": "Dividir Mensaje",
+            "node": "Aviso acceso concedido",
             "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "gestionar_permisos_herramientas": {
-      "ai_tool": [
-        [
-          {
-            "node": "Asistente desarrollo",
-            "type": "ai_tool",
             "index": 0
           }
         ]
       ]
     }
   },
+  "pinData": {},
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "ec13902ac809d3a6a2d7ce4fb05ce0f46787a81a4d9ba49f925f1acf40f46a4f"
