@@ -11,7 +11,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 1. En Postgres, ejecuta `schema.sql` (si ya corriste v1/v2, vuelve a correrlo: tablas nuevas son `IF NOT EXISTS`; el ALTER actualiza `kind` para llegada y añade `media_analysis` / `media_signal`; crea/seed `team_phones` para traspasos del equipo).
 2. Importa los cinco JSON (quedan inactivos).
 3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-flash`) y **OpenAI (DeepSeek vision)** (misma key, Base URL `https://api.deepseek.com/v1`).
-4. Speaches (transcripción de audios WhatsApp): servicio self-hosted con API OpenAI-compatible. En el nodo **Transcribir audio** del 03, pega la URL y `Bearer PEGAR_SPEACHES_API_KEY`. Modelo: `Systran/faster-whisper-small`, `language=es`.
+4. Speaches y Docling del 03 salen de la tabla `app_config` (nodo **Cargar config**). Las claves se actualizan en Postgres, no en el JSON. Modelo Speaches: `Systran/faster-whisper-small`, `language=es`. DeepSeek sigue en la credencial de n8n.
 5. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
 6. Activa 01, prueba un mensaje. Luego 02, 03, 04, **05** y **06**.
 7. En el 01, tool `enviar_grafica`: elige el workflow 05 y refresca los inputs (`telegram_chat_id`, `tipo`, `periodo`, `estilo`). El 05 tiene que estar **publicado**.
@@ -49,7 +49,7 @@ Para audio: Evolution baja el `ogg`, **Transcribir audio** llama a Speaches (`/v
 
 Para certificados de la asesora: documento cuyo body/archivo contiene `certificado` → Evolution baja el PDF → [Docling Serve](https://github.com/docling-project/docling-serve) (`/v1/convert/file`, header `X-Api-Key`, **`page_range=1,1`** solo 1ª hoja) → guarda un **resumen** en `body` (huésped, cédula, check-in/out, habitación, plan, PAX, monto, pago) + `media_analysis` JSON + `media_signal=reserva` y stage `concreto`. Si Docling falla, guarda `[Documento no leido]` y no tumba el flujo.
 
-Params de prod embebidos en el JSON (no se pierden al reimportar): contexto `LIMIT 20`; Filtro `maxTokens=2024` + `timeout=20s` + retry 2×1.5s; Clasificar `maxTokens=3024`; Vision `maxTokens=3048` + `json_object`; Speaches URL EasyPanel + `PEGAR_SPEACHES_API_KEY`; Docling URL EasyPanel + `PEGAR_DOCLING_API_KEY`.
+Params de prod embebidos en el JSON (no se pierden al reimportar): contexto `LIMIT 20`; Filtro `maxTokens=2024` + `timeout=20s` + retry 2×1.5s; Clasificar `maxTokens=3024`; Vision `maxTokens=3048` + `json_object`. URL y API key de Speaches/Docling viven en `app_config`.
 
 ## Flujo 04 — silencio
 

@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. Speaches audio: `https://test-speaches.i3clpy.easypanel.host` + Bearer `PEGAR_SPEACHES_API_KEY`.\n4. Docling certificados: `https://test-docling.i3clpy.easypanel.host` + `X-Api-Key: PEGAR_DOCLING_API_KEY`.\n5. Webhook Evolution path: `seguimientos-leads`.\n6. Guarda ambos lados. Clasifica texto, audios e imágenes del cliente; lee PDF certificado de la asesora.\n7. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n8. `pago` (imagen) o certificado Docling → `concreto`. Fallos de media no tumban el flujo.\n\nParams LLM (prod): Filtro maxTokens=2024 timeout=20s; Clasificar=3024; Vision=3048.\n9. Lista negra WhatsApp: `team_phones.skip_followup=true` → solo guarda (sin Docling/LLM/score). Agregar/quitar números solo en BD; `equipo_ventas` (skip_followup=false) sigue certificados/traspasos.",
+        "content": "## WhatsApp observador (v2)\nEvolution `messages.upsert` → Postgres. **No responde** al cliente.\n\n1. Corre `n8n/schema.sql` (incluye `media_analysis` / `media_signal`).\n2. Mapea Postgres + DeepSeek (`deepseek-flash`) + **OpenAI (DeepSeek vision)**:\n   misma API key, Base URL `https://api.deepseek.com/v1`, modelo `deepseek-flash`.\n3. Speaches y Docling: tabla `app_config` (nodos Consultar app_config → Cargar config). No pegues tokens en el JSON.\n5. Webhook Evolution path: `seguimientos-leads`.\n6. Guarda ambos lados. Clasifica texto, audios e imágenes del cliente; lee PDF certificado de la asesora.\n7. Stages: `en_proceso`, `concreto`, `pregunto_no_concreto`, `no_respondio`.\n8. `pago` (imagen) o certificado Docling → `concreto`. Fallos de media no tumban el flujo.\n\nParams LLM (prod): Filtro maxTokens=2024 timeout=20s; Clasificar=3024; Vision=3048.\n9. Lista negra WhatsApp: `team_phones.skip_followup=true` → solo guarda (sin Docling/LLM/score). Agregar/quitar números solo en BD; `equipo_ventas` (skip_followup=false) sigue certificados/traspasos.\n10. `Es chat propio?`: `fromMe` y `sender` = `remoteJid` → `Descartar chat propio` (no sigue a Postgres, Docling ni LLM).",
         "height": 644,
         "width": 480,
         "color": 7
@@ -35,15 +35,96 @@
     },
     {
       "parameters": {
-        "jsCode": "function unwrapMessage(msg) {\n  if (!msg || typeof msg !== 'object') return {};\n  const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage'];\n  for (const w of wrappers) {\n    if (msg[w] && msg[w].message) return unwrapMessage(msg[w].message);\n  }\n  return msg;\n}\n\nconst root = $input.first().json || {};\nconst payload = root.body && root.body.data ? root.body : root;\nconst event = String(payload.event || '');\nif (event && event !== 'messages.upsert') {\n  return [];\n}\nconst data = payload.data || {};\nconst key = data.key || {};\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid.includes('status@broadcast') || remoteJid.endsWith('@broadcast')) {\n  return [];\n}\nconst alt = String(key.remoteJidAlt || '');\nconst jidForPhone = alt.includes('@s.whatsapp.net') ? alt : remoteJid;\nconst phone = jidForPhone.replace(/[^0-9]/g, '');\nif (!phone) {\n  return [];\n}\n\nconst msg = unwrapMessage(data.message || {});\nconst declared = String(data.messageType || '');\nconst mimeOf = (obj) => String((obj && obj.mimetype) || '');\n\nlet contentType = 'unknown';\nif (msg.extendedTextMessage || msg.conversation || declared === 'conversation' || declared === 'extendedTextMessage') {\n  contentType = 'text';\n}\nif (msg.imageMessage || declared === 'imageMessage' || mimeOf(msg.documentMessage).startsWith('image/')) {\n  contentType = 'image';\n}\nif (msg.videoMessage || msg.ptvMessage || declared === 'videoMessage' || declared === 'ptvMessage') {\n  contentType = 'video';\n}\nif (msg.audioMessage || declared === 'audioMessage') {\n  contentType = 'audio';\n}\nif (msg.stickerMessage || declared === 'stickerMessage') {\n  contentType = 'sticker';\n}\nif ((msg.documentMessage || declared === 'documentMessage') && contentType === 'unknown') {\n  contentType = 'document';\n}\n\nconst caption = [\n  (msg.extendedTextMessage && msg.extendedTextMessage.text) || '',\n  msg.conversation || '',\n  (msg.imageMessage && msg.imageMessage.caption) || '',\n  (msg.videoMessage && msg.videoMessage.caption) || '',\n  (msg.documentMessage && (msg.documentMessage.caption || msg.documentMessage.fileName)) || '',\n].join('').trim();\n\nconst labels = {\n  image: '[Imagen enviada]',\n  video: '[Video enviado]',\n  audio: '[Audio enviado]',\n  sticker: '[Sticker enviado]',\n  document: '[Documento enviado]',\n};\nlet content = caption;\nif (labels[contentType]) {\n  content = caption ? `${labels[contentType]} ${caption}` : labels[contentType];\n}\n\nconst ts = data.messageTimestamp;\nlet occurredAt;\nif (typeof ts === 'number') {\n  occurredAt = DateTime.fromSeconds(ts).toISO();\n} else if (ts && typeof ts.low === 'number') {\n  occurredAt = DateTime.fromSeconds(ts.low).toISO();\n} else {\n  occurredAt = DateTime.now().setZone('America/Caracas').toISO();\n}\n\nreturn [{\n  json: {\n    whatsapp_jid: remoteJid,\n    phone,\n    display_name: String(data.pushName || ''),\n    from_me: Boolean(key.fromMe),\n    message_id: String(key.id || `${remoteJid}-${occurredAt}`),\n    content_type: contentType,\n    body: content,\n    occurred_at: occurredAt,\n    evo_server_url: String(payload.server_url || '').replace(/\\/$/, ''),\n    evo_instance: String(payload.instance || ''),\n    evo_apikey: String(payload.apikey || ''),\n  },\n}];\n"
+        "operation": "executeQuery",
+        "query": "SELECT config_key, config_value FROM app_config;",
+        "options": {}
+      },
+      "id": "cfg-query",
+      "name": "Consultar app_config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        16880,
+        6096
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "onwRUFKCpGpCNnM9",
+          "name": "PostgresDB Seguimiento"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cfg = {};\nfor (const item of $input.all()) {\n  const row = item.json || {};\n  if (row.config_key) cfg[row.config_key] = String(row.config_value ?? '');\n}\nreturn [{ json: cfg }];\n"
+      },
+      "id": "cfg-shape",
+      "name": "Cargar config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17104,
+        6096
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function unwrapMessage(msg) {\n  if (!msg || typeof msg !== 'object') return {};\n  const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage'];\n  for (const w of wrappers) {\n    if (msg[w] && msg[w].message) return unwrapMessage(msg[w].message);\n  }\n  return msg;\n}\n\nconst root = $('Webhook Evolution').first().json || {};\nconst payload = root.body && root.body.data ? root.body : root;\nconst event = String(payload.event || '');\nif (event && event !== 'messages.upsert') {\n  return [];\n}\nconst data = payload.data || {};\nconst key = data.key || {};\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid.includes('status@broadcast') || remoteJid.endsWith('@broadcast')) {\n  return [];\n}\nconst alt = String(key.remoteJidAlt || '');\nconst jidForPhone = alt.includes('@s.whatsapp.net') ? alt : remoteJid;\nconst phone = jidForPhone.replace(/[^0-9]/g, '');\nif (!phone) {\n  return [];\n}\n\nconst digits = (value) => String(value || '').replace(/[^0-9]/g, '');\nconst samePhone = (a, b) => {\n  if (!a || !b) return false;\n  if (a === b) return true;\n  return a.length >= 10 && b.length >= 10 && a.slice(-10) === b.slice(-10);\n};\nconst senderPhone = digits(payload.sender || data.sender || '');\nconst selfChat = Boolean(key.fromMe) && senderPhone && (\n  samePhone(senderPhone, phone) ||\n  samePhone(senderPhone, digits(remoteJid)) ||\n  samePhone(senderPhone, digits(alt))\n);\nconst msg = unwrapMessage(data.message || {});\nconst declared = String(data.messageType || '');\nconst mimeOf = (obj) => String((obj && obj.mimetype) || '');\n\nlet contentType = 'unknown';\nif (msg.extendedTextMessage || msg.conversation || declared === 'conversation' || declared === 'extendedTextMessage') {\n  contentType = 'text';\n}\nif (msg.imageMessage || declared === 'imageMessage' || mimeOf(msg.documentMessage).startsWith('image/')) {\n  contentType = 'image';\n}\nif (msg.videoMessage || msg.ptvMessage || declared === 'videoMessage' || declared === 'ptvMessage') {\n  contentType = 'video';\n}\nif (msg.audioMessage || declared === 'audioMessage') {\n  contentType = 'audio';\n}\nif (msg.stickerMessage || declared === 'stickerMessage') {\n  contentType = 'sticker';\n}\nif ((msg.documentMessage || declared === 'documentMessage') && contentType === 'unknown') {\n  contentType = 'document';\n}\n\nconst caption = [\n  (msg.extendedTextMessage && msg.extendedTextMessage.text) || '',\n  msg.conversation || '',\n  (msg.imageMessage && msg.imageMessage.caption) || '',\n  (msg.videoMessage && msg.videoMessage.caption) || '',\n  (msg.documentMessage && (msg.documentMessage.caption || msg.documentMessage.fileName)) || '',\n].join('').trim();\n\nconst labels = {\n  image: '[Imagen enviada]',\n  video: '[Video enviado]',\n  audio: '[Audio enviado]',\n  sticker: '[Sticker enviado]',\n  document: '[Documento enviado]',\n};\nlet content = caption;\nif (labels[contentType]) {\n  content = caption ? `${labels[contentType]} ${caption}` : labels[contentType];\n}\n\nconst ts = data.messageTimestamp;\nlet occurredAt;\nif (typeof ts === 'number') {\n  occurredAt = DateTime.fromSeconds(ts).toISO();\n} else if (ts && typeof ts.low === 'number') {\n  occurredAt = DateTime.fromSeconds(ts.low).toISO();\n} else {\n  occurredAt = DateTime.now().setZone('America/Caracas').toISO();\n}\n\nreturn [{\n  json: {\n    whatsapp_jid: remoteJid,\n    phone,\n    display_name: String(data.pushName || ''),\n    from_me: Boolean(key.fromMe),\n    self_chat: selfChat,\n    message_id: String(key.id || `${remoteJid}-${occurredAt}`),\n    content_type: contentType,\n    body: content,\n    occurred_at: occurredAt,\n    evo_server_url: String(payload.server_url || '').replace(/\\/$/, ''),\n    evo_instance: String(payload.instance || ''),\n    evo_apikey: String(payload.apikey || ''),\n  },\n}];\n"
       },
       "id": "f411b39c-f7cd-4568-8a8a-aaad57168b17",
       "name": "Normalizar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        16944,
+        17424,
         6096
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-self-chat",
+              "leftValue": "={{ ['t', 'true', '1', true, 1].includes($json.self_chat) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-self-chat",
+      "name": "Es chat propio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        17536,
+        5920
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-self-chat",
+      "name": "Descartar chat propio",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        17760,
+        5760
       ]
     },
     {
@@ -59,7 +140,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        17168,
+        17648,
         6096
       ],
       "alwaysOutputData": true,
@@ -83,7 +164,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        17392,
+        17872,
         6096
       ],
       "alwaysOutputData": true,
@@ -103,7 +184,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        17616,
+        18096,
         6096
       ]
     },
@@ -120,7 +201,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        17840,
+        18320,
         6096
       ],
       "credentials": {
@@ -143,7 +224,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        17950,
+        18430,
         6096
       ],
       "alwaysOutputData": true,
@@ -184,7 +265,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        18010,
+        18490,
         5896
       ]
     },
@@ -195,7 +276,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        18064,
+        18544,
         5896
       ]
     },
@@ -229,7 +310,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        18064,
+        18544,
         6096
       ]
     },
@@ -240,7 +321,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        18512,
+        18992,
         5760
       ]
     },
@@ -274,7 +355,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        19440,
+        19920,
         6416
       ]
     },
@@ -285,7 +366,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        19680,
+        20160,
         6624
       ]
     },
@@ -302,7 +383,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        20464,
+        20944,
         6416
       ],
       "alwaysOutputData": true,
@@ -322,7 +403,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        20656,
+        21136,
         6112
       ]
     },
@@ -337,7 +418,7 @@
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.7,
       "position": [
-        20880,
+        21360,
         6112
       ],
       "retryOnFail": true,
@@ -358,7 +439,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
       "typeVersion": 1,
       "position": [
-        20960,
+        21440,
         6352
       ],
       "credentials": {
@@ -393,7 +474,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        21680,
+        22160,
         6112
       ]
     },
@@ -422,7 +503,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        21680,
+        22160,
         6304
       ]
     },
@@ -451,7 +532,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        21680,
+        22160,
         6496
       ]
     },
@@ -468,7 +549,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        21968,
+        22448,
         6208
       ],
       "credentials": {
@@ -491,7 +572,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        21680,
+        22160,
         5872
       ],
       "credentials": {
@@ -512,7 +593,7 @@
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.7,
       "position": [
-        21904,
+        22384,
         5760
       ]
     },
@@ -529,7 +610,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
       "typeVersion": 1,
       "position": [
-        21984,
+        22464,
         6000
       ],
       "credentials": {
@@ -548,7 +629,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        22256,
+        22736,
         5872
       ]
     },
@@ -565,7 +646,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        22480,
+        22960,
         5872
       ],
       "credentials": {
@@ -588,7 +669,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        22704,
+        23184,
         5872
       ],
       "credentials": {
@@ -607,7 +688,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        21232,
+        21712,
         6112
       ]
     },
@@ -722,7 +803,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        21456,
+        21936,
         6064
       ]
     },
@@ -756,7 +837,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        18288,
+        18768,
         6288
       ]
     },
@@ -785,7 +866,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        18720,
+        19200,
         6976
       ],
       "alwaysOutputData": true,
@@ -801,7 +882,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        18944,
+        19424,
         6976
       ]
     },
@@ -835,7 +916,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        19168,
+        19648,
         6976
       ]
     },
@@ -852,7 +933,7 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        19392,
+        19872,
         6928
       ],
       "continueOnFail": true,
@@ -878,7 +959,7 @@
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.7,
       "position": [
-        19616,
+        20096,
         6816
       ],
       "continueOnFail": true,
@@ -902,7 +983,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.2,
       "position": [
-        19680,
+        20160,
         7056
       ],
       "credentials": {
@@ -937,7 +1018,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        19680,
+        20160,
         7216
       ]
     },
@@ -950,7 +1031,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        19968,
+        20448,
         6976
       ]
     },
@@ -967,7 +1048,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        20192,
+        20672,
         6976
       ],
       "alwaysOutputData": true,
@@ -990,7 +1071,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        18656,
+        19136,
         6624
       ]
     },
@@ -1023,7 +1104,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        18544,
+        19024,
         6304
       ]
     },
@@ -1052,7 +1133,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        18768,
+        19248,
         6224
       ],
       "alwaysOutputData": true,
@@ -1068,7 +1149,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        18992,
+        19472,
         6224
       ]
     },
@@ -1102,7 +1183,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        19216,
+        19696,
         6224
       ]
     },
@@ -1119,7 +1200,7 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        19440,
+        19920,
         6224
       ],
       "continueOnFail": true,
@@ -1128,13 +1209,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://test-speaches.i3clpy.easypanel.host/v1/audio/transcriptions",
+        "url": "={{ $('Cargar config').first().json.speaches_url }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer PEGAR_SPEACHES_API_KEY"
+              "value": "={{ 'Bearer ' + $('Cargar config').first().json.speaches_api_key }}"
             }
           ]
         },
@@ -1166,7 +1247,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        19728,
+        20208,
         6224
       ],
       "alwaysOutputData": true,
@@ -1182,7 +1263,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        20016,
+        20496,
         6224
       ]
     },
@@ -1199,7 +1280,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        20240,
+        20720,
         6224
       ],
       "alwaysOutputData": true,
@@ -1222,7 +1303,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        18656,
+        19136,
         5920
       ]
     },
@@ -1256,7 +1337,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        18288,
+        18768,
         5664
       ]
     },
@@ -1285,7 +1366,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        18512,
+        18992,
         5568
       ],
       "alwaysOutputData": true,
@@ -1301,7 +1382,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        18736,
+        19216,
         5568
       ]
     },
@@ -1335,7 +1416,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        18960,
+        19440,
         5568
       ]
     },
@@ -1353,7 +1434,7 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        19184,
+        19664,
         5536
       ],
       "continueOnFail": true,
@@ -1362,13 +1443,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://test-docling.i3clpy.easypanel.host/v1/convert/file",
+        "url": "={{ $('Cargar config').first().json.docling_url }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "X-Api-Key",
-              "value": "PEGAR_DOCLING_API_KEY"
+              "value": "={{ $('Cargar config').first().json.docling_api_key }}"
             },
             {
               "name": "accept",
@@ -1428,7 +1509,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        19408,
+        19888,
         5536
       ],
       "alwaysOutputData": true,
@@ -1444,7 +1525,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        19696,
+        20176,
         5536
       ]
     },
@@ -1497,7 +1578,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        19184,
+        19664,
         5728
       ]
     },
@@ -1514,7 +1595,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        19984,
+        20464,
         5536
       ],
       "alwaysOutputData": true,
@@ -1555,7 +1636,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        20208,
+        20688,
         5536
       ]
     },
@@ -1572,7 +1653,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        20432,
+        20912,
         5536
       ],
       "credentials": {
@@ -1595,7 +1676,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        20656,
+        21136,
         5536
       ],
       "credentials": {
@@ -1617,7 +1698,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        18512,
+        18992,
         5296
       ]
     },
@@ -1634,7 +1715,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        19408,
+        19888,
         5728
       ],
       "alwaysOutputData": true,
@@ -1652,7 +1733,7 @@
       "main": [
         [
           {
-            "node": "Normalizar",
+            "node": "Consultar app_config",
             "type": "main",
             "index": 0
           }
@@ -1663,7 +1744,7 @@
       "main": [
         [
           {
-            "node": "Upsert lead",
+            "node": "Es chat propio?",
             "type": "main",
             "index": 0
           }
@@ -2316,6 +2397,46 @@
         [
           {
             "node": "Es asesora?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es chat propio?": {
+      "main": [
+        [
+          {
+            "node": "Descartar chat propio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upsert lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar app_config": {
+      "main": [
+        [
+          {
+            "node": "Cargar config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar config": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
             "type": "main",
             "index": 0
           }

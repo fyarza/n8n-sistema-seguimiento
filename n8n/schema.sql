@@ -128,6 +128,21 @@ CREATE TABLE IF NOT EXISTS lead_score_events (
 CREATE INDEX IF NOT EXISTS idx_lead_score_lead_time
   ON lead_score_events (lead_id, created_at DESC);
 
+-- URLs y secretos que el flujo 03 lee al inicio (Cargar config).
+-- ON CONFLICT DO NOTHING: re-ejecutar schema no pisa claves ya cargadas en prod.
+CREATE TABLE IF NOT EXISTS app_config (
+  config_key TEXT PRIMARY KEY,
+  config_value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO app_config (config_key, config_value) VALUES
+  ('speaches_url', 'https://test-speaches.i3clpy.easypanel.host/v1/audio/transcriptions'),
+  ('speaches_api_key', 'PEGAR_SPEACHES_API_KEY'),
+  ('docling_url', 'https://test-docling.i3clpy.easypanel.host/v1/convert/file'),
+  ('docling_api_key', 'PEGAR_DOCLING_API_KEY')
+ON CONFLICT (config_key) DO NOTHING;
+
 -- Números del equipo de ventas / traspaso interno (no son captación del chat).
 -- Mantener con INSERT/UPDATE; los reportes excluyen active=true del % de conversión.
 -- skip_followup=true = lista negra del flujo 03 (guarda mensaje, sin Docling/LLM/score).
