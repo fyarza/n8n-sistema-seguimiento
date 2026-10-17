@@ -1664,7 +1664,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO assistant_access_requests (\n  telegram_user_id, display_name, username, status, requested_at, updated_at\n)\nVALUES (\n  $1::bigint,\n  COALESCE($2::text, ''),\n  NULLIF($3::text, ''),\n  'pending',\n  now(),\n  now()\n)\nON CONFLICT (telegram_user_id) DO UPDATE SET\n  display_name = CASE\n    WHEN NULLIF(btrim(EXCLUDED.display_name), '') IS NULL THEN assistant_access_requests.display_name\n    ELSE EXCLUDED.display_name\n  END,\n  username = COALESCE(NULLIF(btrim(EXCLUDED.username), ''), assistant_access_requests.username),\n  status = 'pending',\n  requested_at = now(),\n  updated_at = now();",
         "options": {
-            "queryReplacement": "={{ $('Telegram Trigger').first().json.message.from.id }},={{ [$('Telegram Trigger').first().json.message.from.first_name, $('Telegram Trigger').first().json.message.from.last_name].filter(Boolean).join(' ') }},={{ $('Telegram Trigger').first().json.message.from.username || '' }}"
+            "queryReplacement": "={{ [$('Telegram Trigger').first().json.message.from.id, [$('Telegram Trigger').first().json.message.from.first_name, $('Telegram Trigger').first().json.message.from.last_name].filter(Boolean).join(' '), $('Telegram Trigger').first().json.message.from.username || ''] }}"
         }
       },
       "id": "guardar-solicitud-acceso",
