@@ -327,6 +327,23 @@ FROM (VALUES
 ) AS tool(tool_name)
 ON CONFLICT (team_tag, tool_name) DO NOTHING;
 
+-- Fallos que el flujo 08 registra cuando otro workflow lo tiene como Error Workflow.
+-- No apunta a sí mismo: un fallo aquí no debe reentrar.
+CREATE TABLE IF NOT EXISTS workflow_errors (
+  id BIGSERIAL PRIMARY KEY,
+  workflow_id TEXT,
+  workflow_name TEXT NOT NULL,
+  node_name TEXT NOT NULL,
+  error_message TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  execution_id TEXT,
+  execution_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_errors_created
+  ON workflow_errors (created_at DESC);
+
 -- Undo false client scoring when internal numbers were treated as leads.
 UPDATE leads SET
   stage = 'en_proceso',

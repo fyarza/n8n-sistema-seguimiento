@@ -13,7 +13,7 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 3. Mapea credenciales: Telegram, Postgres, DeepSeek (`deepseek-flash`) y **OpenAI (DeepSeek vision)** (misma key, Base URL `https://api.deepseek.com/v1`).
 4. Speaches y Docling del 03 salen de la tabla `app_config` (nodo **Cargar config**). Las claves se actualizan en Postgres, no en el JSON. Modelo Speaches: `Systran/faster-whisper-small`, `language=es`. DeepSeek sigue en la credencial de n8n.
 5. En Evolution, webhook POST a `https://demo-n8n.hiti0l.easypanel.host/webhook/seguimientos-leads` (evento `messages.upsert`).
-6. Activa 01, prueba un mensaje. Luego 02, 03, 04, **05** y **06**.
+6. Activa 01, prueba un mensaje. Luego 02, 03, 04, **05**, **06** y **08**.
 7. En el 01, tool `enviar_grafica`: elige el workflow 05 y refresca los inputs (`telegram_chat_id`, `tipo`, `periodo`, `estilo`). El 05 tiene que estar **publicado**.
 8. Tool `generar_certificado_reserva`: elige el workflow 06 y refresca inputs. El 06 tiene que estar **publicado**. Gotenberg: `Config.gotenbergUrl` (default `https://test-gotenberg.i3clpy.easypanel.host/forms/chromium/convert/html`). Assets en Filebrowser (URLs públicas en la plantilla).
 
@@ -28,6 +28,8 @@ Arquitectura: [`docs/arquitectura.md`](../docs/arquitectura.md).
 | `04-cron-silencio-leads.json` | Silencio >24 h tras cotización | No |
 | `05-telegram-grafica-reportes.json` | SQL → QuickChart → foto Telegram | No |
 | `06-telegram-certificado-reserva.json` | HTML plantilla → Gotenberg PDF → documento Telegram | No |
+| `07-autorizar-y-avisar.json` | Alta de acceso y aviso Telegram. Lo llama el 01 | No |
+| `08-error-workflow.json` | Error Workflow global: guarda el fallo y avisa a desarrollo | No |
 
 n8n tiene que ser alcanzable por HTTPS (`WEBHOOK_URL`). Telegram y Evolution no hablan con localhost.
 
@@ -95,6 +97,14 @@ Quien escribe sin permiso queda en `assistant_access_requests` (nombre de Telegr
 
 - `assistant_chat_messages`: ventana corta del agente.
 - Compacta a `conversation_summaries` solo si hay **más de 40** filas; luego borra y deja **20**. Así el contador baja a ~20 y no vuelve a compactar en cada mensaje (hace falta acumular otra vez ~20 msgs).
+
+## Flujo 08 — errores
+
+`Error Trigger`. No se dispara solo: en Settings de **cada** workflow (01 a 07) elige este como Error Workflow. No lo pongas como Error Workflow de sí mismo.
+
+Guarda en `workflow_errors` y manda Telegram HTML a la persona `team_phones` con `team_tag = desarrollo` y `assistant_enabled`. Hora `America/Caracas`. `CRÍTICO` solo si el mensaje contiene `timeout` o `connection`; si no, `Normal`.
+
+El 03 hoy apunta a otro id (`gJZyX1xnl4AShH4c`). Después de importar el 08, ese Settings hay que pasarlo a este flujo. El id nuevo sale al importar; no vive en el JSON.
 
 ## Si el agente falla al usar tools
 

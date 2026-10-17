@@ -1,0 +1,185 @@
+{
+  "name": "Seguimientos: errores globales",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Errores globales\nError Trigger de n8n. No se llama solo: en cada workflow (01 a 07) ve a Settings → Error Workflow y elige este.\nNo lo configures como Error Workflow de sí mismo.\n\n1. Corre `n8n/schema.sql` (tabla `workflow_errors`).\n2. Importa, mapea Telegram + Postgres y actívalo.\n3. En cada otro workflow, Settings → Error Workflow → este.\n4. El aviso sale al `team_phones` con `team_tag = desarrollo` y `assistant_enabled`.\n\nCRÍTICO solo si el mensaje trae timeout o connection. El resto queda Normal.",
+        "height": 360,
+        "width": 460,
+        "color": 7
+      },
+      "id": "note-errores",
+      "name": "Nota errores",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        -80
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const root = $input.first().json || {};\nconst execution = root.execution || {};\nconst error = execution.error || root.error || {};\nconst workflow = root.workflow || {};\nconst message = String(error.message || 'Error sin mensaje');\nconst lower = message.toLowerCase();\nconst severity = lower.includes('timeout') || lower.includes('connection') ? 'CRÍTICO' : 'Normal';\nconst nodeName = String((error.node && error.node.name) || execution.lastNodeExecuted || 'Nodo desconocido');\nconst workflowName = String(workflow.name || 'Workflow desconocido');\nconst executionUrl = String(execution.url || '');\nconst timestamp = DateTime.now().setZone('America/Caracas').toFormat('yyyy-MM-dd HH:mm:ss');\nconst esc = (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst shown = message.length > 1500 ? `${message.slice(0, 1500)}…` : message;\nconst lines = [\n  severity === 'CRÍTICO' ? '🔴 <b>Error crítico en n8n</b>' : '⚠️ <b>Error en n8n</b>',\n  '',\n  `<b>Cuándo:</b> ${esc(timestamp)}`,\n  `<b>Workflow:</b> ${esc(workflowName)}`,\n  `<b>Nodo:</b> ${esc(nodeName)}`,\n  `<b>Tipo:</b> ${esc(severity)}`,\n  `<b>Error:</b> ${esc(shown)}`,\n];\nif (executionUrl) lines.push('', `<a href=\"${esc(executionUrl)}\">Ver ejecución</a>`);\nreturn [{\n  json: {\n    timestamp,\n    workflow_id: String(workflow.id || ''),\n    workflow_name: workflowName,\n    node_name: nodeName,\n    error_message: message,\n    severity,\n    execution_id: String(execution.id || ''),\n    execution_url: executionUrl,\n    text: lines.join('\\n'),\n  },\n}];"
+      },
+      "id": "normalizar-error",
+      "name": "Normalizar error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH logged AS (\n  INSERT INTO workflow_errors (\n    workflow_id, workflow_name, node_name, error_message, severity, execution_id, execution_url\n  )\n  VALUES (\n    NULLIF($1::text, ''),\n    $2,\n    $3,\n    $4,\n    $5,\n    NULLIF($6::text, ''),\n    NULLIF($7::text, '')\n  )\n  RETURNING id\n)\nSELECT\n  l.id,\n  t.telegram_user_id::text AS chat_id\nFROM logged l\nLEFT JOIN LATERAL (\n  SELECT telegram_user_id\n  FROM team_phones\n  WHERE team_tag = 'desarrollo'\n    AND assistant_enabled\n    AND telegram_user_id IS NOT NULL\n  ORDER BY id\n  LIMIT 1\n) t ON true;",
+        "options": {
+          "queryReplacement": "={{ [$json.workflow_id, $json.workflow_name, $json.node_name, $json.error_message, $json.severity, $json.execution_id, $json.execution_url] }}"
+        }
+      },
+      "id": "registrar-error",
+      "name": "Registrar error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        480,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PEGAR_CRED_POSTGRES",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hay-chat-desarrollo",
+              "leftValue": "={{ $json.chat_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hay-chat",
+      "name": "Hay chat de desarrollo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $('Normalizar error').item.json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "avisar-desarrollo",
+      "name": "Avisar desarrollo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        960,
+        120
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "PEGAR_CRED_TELEGRAM",
+          "name": "Telegram account"
+        }
+      },
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalizar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar error": {
+      "main": [
+        [
+          {
+            "node": "Registrar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar error": {
+      "main": [
+        [
+          {
+            "node": "Hay chat de desarrollo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay chat de desarrollo?": {
+      "main": [
+        [
+          {
+            "node": "Avisar desarrollo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
